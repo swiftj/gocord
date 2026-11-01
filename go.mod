@@ -3,12 +3,12 @@ module github.com/local/discord-mcp
 go 1.26.0
 
 require (
+	github.com/bwmarrin/discordgo v0.29.0
 	github.com/mark3labs/mcp-go v1.5.0
 	modernc.org/sqlite v1.61.1
 )
 
 require (
-	github.com/bwmarrin/discordgo v0.29.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
