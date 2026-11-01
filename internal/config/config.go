@@ -190,7 +190,7 @@ func (c *Config) TokenForProfile(name string, getenv func(string) string) (strin
 }
 
 func loadProfiles(path string) (map[string]Profile, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: path is the operator-supplied --config file
 	if err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}

@@ -26,7 +26,7 @@ func SnowflakeFromTime(t time.Time) string {
 	if ms < 0 {
 		ms = 0
 	}
-	return strconv.FormatUint(uint64(ms)<<22, 10)
+	return strconv.FormatUint(uint64(ms)<<22, 10) //nolint:gosec // G115: ms is clamped to >= 0 above
 }
 
 // IsSnowflake reports whether s looks like a Discord Snowflake (all digits, 15–20 chars).

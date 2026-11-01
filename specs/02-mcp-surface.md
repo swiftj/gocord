@@ -20,7 +20,7 @@ Legend: **R** read-only · **W** write · **D** destructive · **DR** supports `
 
 | # | Tool | Kind | Parameters (required in **bold**) | Behaviour / Service call |
 | :-- | :--- | :-- | :--- | :--- |
-| 1 | `discord_login` | W | **`token`**, `profile` | `Login`. Switches the active profile. If `token` is omitted and `profile` names a configured profile, use its `token_env`. Never echo the token. Returns `SessionInfo`. |
+| 1 | `discord_login` | W | `token`, `profile` (at least one required) | `Login`. Switches the active profile. If `token` is omitted and `profile` names a configured profile, use its `token_env`. Never echo the token. Returns `SessionInfo`. |
 | 2 | `discord_list_servers` | R | — | `ListGuilds`. Name, ID, member count, owner. Filtered by guild allow/block lists. |
 | 3 | `discord_get_server_info` | R | **`guild_id`** | `GetGuildInfo`. Metadata, channels, roles, boost tier, features. |
 | 4 | `discord_send` | W | **`channel_id`**, **`content`**, `embed` (object), `file_path`, `reply_to_message_id` | `SendMessage`. Works in threads. `file_path` must be absolute, a regular file, and ≤ 25 MiB. Content must be ≤ 2000 chars (validate before calling). |
@@ -81,7 +81,7 @@ Legend: **R** read-only · **W** write · **D** destructive · **DR** supports `
 ### 3.3 Persona send (`webhooks_persona.go`)
 1. Load the persona (`Store.GetPersona`). If unknown, return an error listing the registered personas.
 2. Target the channel: `channel_id`, or else the persona's default. If the target is a thread, use its parent for the webhook and pass `thread_id`.
-3. Look up `persona_webhooks[parent_channel]`. If it is missing, `CreateWebhook(parent, "discord-mcp personas")` and store the ID and token. If a send returns `404 Unknown Webhook`, delete the row, recreate once, and retry.
+3. Look up `persona_webhooks[parent_channel]`. If it is missing, `CreateWebhook(parent, "MCP Personas")` and store the ID. The token stays inside the live client and is never returned. Discord rejects webhook names and usernames containing "discord" or "clyde", so the tools validate against both. If a send returns `404 Unknown Webhook`, delete the row, recreate once, and retry.
 4. `SendWebhookMessage` with `username = display_name`, `avatar_url = persona.avatar_url`.
 5. Never expose the webhook token in output or logs.
 
@@ -103,7 +103,7 @@ MIME `text/markdown`. A single compact document:
 ```
 Sort categories by position, then uncategorised channels. Include active threads only. Truncate topics to 80 chars.
 
-### `discord://channels/{channel_id}/transcript`
+### `discord://channels/{channel_id}/transcript{?limit,before}`
 MIME `text/plain`. The last 100 messages (query param `?limit=` up to 500; `?before=`), in chronological order:
 ```text
 [2026-11-01 14:55] @alice: Shipping v1.2 tomorrow — @Moderator please review #release-notes
@@ -115,7 +115,10 @@ All `<@id>`, `<@&id>`, and `<#id>` mentions resolve to `@name`, `@role`, and `#c
 `discord://guilds` (MIME `application/json`) is the `ListGuilds` output. It serves as an entry point for clients that browse resources.
 
 ### Resource subscriptions
-Enable with `server.WithResourceCapabilities(true /*subscribe*/, true /*listChanged*/)`. On a Gateway `MessageCreate` in a channel with an active subscription to its transcript URI, send `notifications/resources/updated`. Do the same for `map` on channel, role, or thread create/update/delete. Debounce to ≤ 1 notification per URI per 2 s.
+Enable with `server.WithResourceCapabilities(true /*subscribe*/, true /*listChanged*/)`. On a Gateway `MessageCreate` in a channel with an active subscription to its transcript URI, send `notifications/resources/updated`. Do the same for `map` on channel, role, or thread create/update/delete. Debounce to ≤ 1 notification per URI per 2 s. Implemented by `internal/mcp/subscriptions.go` (`Notifier`); notifications go only to sessions subscribed to that URI, including URIs with query strings.
+
+### Webhook policy scope
+`discord_edit_webhook`, `discord_delete_webhook`, and `discord_send_webhook_message` (by `webhook_id`) resolve the webhook's channel with `GetWebhook` and check policy against that channel and guild. A move is also checked against the destination channel. Read-only mode is checked first, before any lookup. A `webhook_url` send whose webhook the bot cannot inspect is refused when guild or channel allowlists are configured.
 
 ## 5. Prompts (`prompts/prompts.go`)
 Register with `mcp.NewPrompt(name, mcp.WithPromptDescription(...), mcp.WithArgument(...))`.

@@ -105,7 +105,7 @@ jobs:
         with: { go-version-file: go.mod }
       - run: test -z "$(gofmt -s -l .)"
       - run: go vet ./...
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v8 # v2 config format requires >= v7
   test:
     strategy:
       fail-fast: false

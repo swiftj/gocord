@@ -42,7 +42,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, fmt.Errorf("index: create dir: %w", err)
 		}
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // G304: operator-configured --db-path
 		if err != nil {
 			return nil, fmt.Errorf("index: create db file: %w", err)
 		}
@@ -165,7 +165,7 @@ func (s *Store) UpsertMessages(ctx context.Context, guildID, threadParentID stri
 	if err != nil {
 		return fmt.Errorf("index: begin: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
 	stmt, err := tx.PrepareContext(ctx, upsertSQL)
 	if err != nil {
 		return fmt.Errorf("index: prepare: %w", err)
@@ -266,6 +266,7 @@ func (s *Store) search(ctx context.Context, q dto.SearchQuery, match string) ([]
 	limit = min(limit, dto.MaxSearchLimit)
 	args = append(args, limit)
 
+	//nolint:gosec // G202: WHERE fragments are constant strings; every value is a bound parameter
 	query := `SELECT m.id, m.channel_id, m.author_id, m.author_name, m.content, m.created_at, m.edited_at, m.has_attachments,
 		snippet(messages_fts, 0, '**', '**', '…', 12), bm25(messages_fts)
 		FROM messages_fts JOIN messages m ON m.rowid = messages_fts.rowid

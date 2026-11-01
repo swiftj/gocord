@@ -325,22 +325,6 @@ func (r *Resolver) userName(id string) (string, bool) {
 	return n, ok
 }
 
-func (r *Resolver) guildName(id string) string {
-	g, _ := r.guild(id)
-	return g.Name
-}
-
-func (r *Resolver) hasGuildChannels(guildID string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, c := range r.channels {
-		if c.GuildID == guildID {
-			return true
-		}
-	}
-	return false
-}
-
 // ---------- resolution ----------
 
 type candidate struct {

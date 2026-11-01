@@ -386,7 +386,7 @@ func openAttachment(path string) (*discordgo.File, func(), error) {
 	if fi.Size() > MaxAttachmentBytes {
 		return nil, nil, fmt.Errorf("file_path %q is %d bytes; the limit is %d (25 MiB)", path, fi.Size(), MaxAttachmentBytes)
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: attaching a caller-chosen local file is the documented purpose of file_path
 	if err != nil {
 		return nil, nil, fmt.Errorf("file_path: %w", err)
 	}
@@ -967,6 +967,21 @@ func (c *Client) webhookToken(ctx context.Context, s *discordgo.Session, id stri
 	}
 	c.rememberWebhookToken(id, w.Token)
 	return w.Token, nil
+}
+
+// GetWebhook returns a webhook's metadata (never its token). Requires ManageWebhooks.
+func (c *Client) GetWebhook(ctx context.Context, webhookID string) (*dto.WebhookInfo, error) {
+	s, err := c.sess()
+	if err != nil {
+		return nil, err
+	}
+	w, err := s.Webhook(webhookID, discordgo.WithContext(ctx))
+	if err != nil {
+		return nil, mapErr("get webhook", err)
+	}
+	c.rememberWebhookToken(w.ID, w.Token)
+	info := toWebhookInfo(w)
+	return &info, nil
 }
 
 func (c *Client) CreateWebhook(ctx context.Context, channelID, name string) (*dto.WebhookInfo, error) {

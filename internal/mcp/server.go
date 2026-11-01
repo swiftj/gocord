@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/local/discord-mcp/internal/mcp/deps"
@@ -40,15 +41,30 @@ var registrations = []func(*server.MCPServer, deps.Deps){
 
 // NewServer constructs the MCP server with all tools, resources, and prompts.
 func NewServer(d Deps, version string) *server.MCPServer {
-	s := server.NewMCPServer(ServerName, version,
+	s, _ := New(d, version)
+	return s
+}
+
+// New constructs the MCP server and the resource-subscription Notifier.
+// Feed Gateway events to Notifier.HandleEvent (e.g. via discord.Client.OnEvent)
+// so subscribed sessions receive notifications/resources/updated.
+func New(d Deps, version string) (*server.MCPServer, *Notifier) {
+	var s *server.MCPServer
+	n := newNotifier(func(sessionID, uri string) {
+		if err := s.SendNotificationToSpecificClient(sessionID, mcp.MethodNotificationResourceUpdated, map[string]any{"uri": uri}); err != nil {
+			d.Log().Debug("resource update notification not delivered", "uri", uri, "err", err)
+		}
+	})
+	s = server.NewMCPServer(ServerName, version,
 		server.WithToolCapabilities(false),
 		server.WithResourceCapabilities(true, true),
 		server.WithPromptCapabilities(false),
 		server.WithRecovery(),
 		server.WithInstructions(instructions),
+		server.WithHooks(n.hooks()),
 	)
 	for _, register := range registrations {
 		register(s, d)
 	}
-	return s
+	return s, n
 }

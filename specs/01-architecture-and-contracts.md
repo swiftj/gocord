@@ -154,6 +154,7 @@ type Service interface {
 	RemoveRole(ctx context.Context, guildID, userID, roleID string) error
 
 	// Webhooks, Personas, Events & HITL Interactions
+	GetWebhook(ctx context.Context, webhookID string) (*dto.WebhookInfo, error) // added in Wave 3 (never returns the token)
 	CreateWebhook(ctx context.Context, channelID, name string) (*dto.WebhookInfo, error)
 	EditWebhook(ctx context.Context, webhookID, name, channelID string) (*dto.WebhookInfo, error)
 	DeleteWebhook(ctx context.Context, webhookID, reason string) error
@@ -166,6 +167,8 @@ type Service interface {
 
 ### Interface notes
 - `GetChannel` was added during Wave 1. Channel-only tools need it to find the channel's guild (for allowlist checks) and a thread's parent, and to fetch the current state that dry-run previews compare against.
+- `GetWebhook` was added in Wave 3 so webhook tools scope policy checks to the webhook's real channel and guild, not just the default guild.
+- Optional interface (not on `Service`): `BotUserID() string`, implemented by `*Client` and `*MockClient`. `discord_manage_roles` uses it to refuse edits to roles at or above the bot's highest role. The mock fixture gives the bot a managed role `MCP Bot` (`100000000000000041`, position 10).
 - `ParseRef` and `NameMatches` in `internal/discord/ref.go` are the single parser for `#name`, `@name`, `<#id>`, `<@id>`, `<@!id>`, `<@&id>`, and raw IDs. `resolver.go` MUST use them.
 - `EditRole` takes `guildID` through `req.GuildID` (Discord's role endpoints are guild-scoped).
 - Resolver methods accept a raw Snowflake (returned unchanged), `#name`, `name`, or a `<#id>`/`<@id>`/`<@!id>` mention. Ambiguous names return `ErrAmbiguous` listing the candidate IDs. Unknown names return `ErrNotFound`.
@@ -398,8 +401,9 @@ func (s *Store) DeletePersonaWebhook(ctx context.Context, webhookID string) erro
 
 ## 9. MCP Server Bootstrap (`internal/mcp/`)
 - `internal/mcp/deps/deps.go`: `type Deps struct { Discord discord.Service; Store *index.Store; Guard *policy.Guard; Config *config.Config; Logger *slog.Logger }`. It is a leaf package, which avoids a `tools` → `mcp` import cycle.
-- `internal/mcp/server.go`: `NewServer(d deps.Deps, version string) *server.MCPServer` calls every hook in order:
+- `internal/mcp/server.go`: `New(d deps.Deps, version string) (*server.MCPServer, *Notifier)` (with `NewServer` as a wrapper that returns only the server) calls every hook in order:
   `tools.Register{Guild,Channel,Message,Search,ForumThread,ReactionPoll,MemberRole,WebhookPersona,Event,Interaction}Tools`, `resources.Register`, `prompts.Register`. Each hook has the signature `func(*server.MCPServer, deps.Deps)` and lives in the file it registers.
+- `internal/mcp/subscriptions.go`: `Notifier` tracks `resources/subscribe` per session through mcp-go hooks, because mcp-go itself does not filter which clients receive updates. `main.go` connects it with `client.OnEvent(notifier.HandleEvent)`. Sends are debounced to 1 per URI per 2 s and go only to subscribed sessions.
 - `internal/mcp/tools/helpers.go` and `helpers_test.go` are **Lead-owned shared helpers** in package `tools`. They provide `jsonResult`, `listResult`, `errorResult`, `errorf`, `hasArg`/`optString`/`optBool`/`dryRun`/`objectArg`/`cursorArg`/`clamp`, `resolveGuild`/`resolveGuildRef`/`resolveChannel`/`resolveUser`/`resolveRole`, `channelOp`/`guildOp` with `opRead`/`opWrite`/`opDestructive`, `dryRunResult`, `parsePermissions`/`permissionNames`/`parseColor`/`containsFold`, and the test harness `newTestDeps`/`newTestServer`/`callTool`/`resultText`/`decodeResult`. Wave 2 teammates reuse these and never redefine them. File-private helpers take a file-specific prefix to avoid collisions in the shared package.
 
 ## 10. Testing Requirements

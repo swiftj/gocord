@@ -109,9 +109,10 @@ func run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 		}
 	}()
 
-	s := mcp.NewServer(mcp.Deps{
+	s, notifier := mcp.New(mcp.Deps{
 		Discord: client, Store: store, Guard: policy.New(cfg), Config: cfg, Logger: logger,
 	}, version)
+	client.OnEvent(notifier.HandleEvent) // resource subscriptions (spec 02 §4)
 
 	if cfg.ListToolsJSON {
 		return listToolsJSON(s, stdout, stderr)

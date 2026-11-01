@@ -76,6 +76,9 @@ type Service interface {
 	RemoveRole(ctx context.Context, guildID, userID, roleID string) error
 
 	// Webhooks, Personas, Events & HITL Interactions
+	// GetWebhook was added in Wave 3 so webhook tools can scope policy checks to the
+	// webhook's real channel and guild. It never returns the token.
+	GetWebhook(ctx context.Context, webhookID string) (*dto.WebhookInfo, error)
 	CreateWebhook(ctx context.Context, channelID, name string) (*dto.WebhookInfo, error)
 	EditWebhook(ctx context.Context, webhookID, name, channelID string) (*dto.WebhookInfo, error)
 	DeleteWebhook(ctx context.Context, webhookID, reason string) error

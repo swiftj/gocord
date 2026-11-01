@@ -57,7 +57,9 @@ func TestInvalidTransport(t *testing.T) {
 func TestProfilesFile(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.json")
-	os.WriteFile(good, []byte(`{"profiles":{"ops":{"token_env":"OPS_TOKEN","allowed_guilds":["100000000000000001"],"read_only":true}}}`), 0o600)
+	if err := os.WriteFile(good, []byte(`{"profiles":{"ops":{"token_env":"OPS_TOKEN","allowed_guilds":["100000000000000001"],"read_only":true}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	c, err := Load([]string{"--config", good, "--profile", "ops"}, envFrom(map[string]string{"OPS_TOKEN": "ops-secret"}))
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +72,9 @@ func TestProfilesFile(t *testing.T) {
 	}
 
 	bad := filepath.Join(dir, "bad.json")
-	os.WriteFile(bad, []byte(`{"profiles":{"ops":{"token":"literal"}}}`), 0o600)
+	if err := os.WriteFile(bad, []byte(`{"profiles":{"ops":{"token":"literal"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Load([]string{"--config", bad}, envFrom(nil)); !errors.Is(err, ErrInlineToken) {
 		t.Fatalf("want ErrInlineToken, got %v", err)
 	}

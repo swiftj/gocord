@@ -245,7 +245,13 @@ func (c *Client) Login(ctx context.Context, token, profile string) (*dto.Session
 	select {
 	case err = <-opened:
 	case <-ctx.Done():
-		go func() { <-opened; _ = s.Close() }()
+		go func() {
+			// Wait for Open to finish, then close whatever it opened (Open's error is irrelevant here).
+			if err := <-opened; err != nil {
+				c.log.Debug("gateway open finished after login was cancelled", "err", err)
+			}
+			_ = s.Close()
+		}()
 		return nil, ctx.Err()
 	}
 	if err != nil {
@@ -282,6 +288,10 @@ func (c *Client) Login(ctx context.Context, token, profile string) (*dto.Session
 	c.log.Info("discord session opened", "profile", profile, "bot_user_id", me.ID, "guilds", len(guilds))
 	return &dto.SessionInfo{Profile: profile, BotUserID: me.ID, BotUsername: me.Username, GuildCount: len(guilds)}, nil
 }
+
+// BotUserID returns the logged-in bot's user ID ("" before Login). Tools use it
+// (via an optional interface) to enforce role-hierarchy checks.
+func (c *Client) BotUserID() string { return c.botUserID() }
 
 func (c *Client) botUserID() string {
 	c.mu.RLock()

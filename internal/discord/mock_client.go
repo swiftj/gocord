@@ -19,6 +19,7 @@ const (
 	MockCategoryID     = "100000000000000020"
 	MockForumID        = "100000000000000030"
 	MockModeratorRole  = "100000000000000040"
+	MockBotRoleID      = "100000000000000041" // managed bot role above @Moderator
 	MockAliceID        = "100000000000000050"
 	MockBotID          = "100000000000000099"
 	MockForumThreadID  = "100000000000000060"
@@ -114,13 +115,14 @@ func NewMockClient() *MockClient {
 			MockGuildID: {
 				{ID: MockGuildID, Name: "@everyone", Position: 0, Permissions: "1024"},
 				{ID: MockModeratorRole, Name: "Moderator", Color: "#3498DB", Position: 5, Permissions: "8192", PermissionNames: []string{"ManageMessages"}, Hoist: true},
+				{ID: MockBotRoleID, Name: "MCP Bot", Position: 10, Permissions: "268435456", PermissionNames: []string{"ManageRoles"}, Managed: true},
 			},
 		},
 		Members: map[string][]dto.MemberInfo{
 			MockGuildID: {
 				{UserID: MockAliceID, Username: "alice", Roles: []string{"Moderator"}, JoinedAt: "2024-01-02T00:00:00Z"},
 				{UserID: "100000000000000051", Username: "bob", JoinedAt: "2024-02-01T00:00:00Z"},
-				{UserID: MockBotID, Username: "discord-mcp", Bot: true, JoinedAt: "2024-01-01T00:00:00Z"},
+				{UserID: MockBotID, Username: "discord-mcp", Roles: []string{"MCP Bot"}, Bot: true, JoinedAt: "2024-01-01T00:00:00Z"},
 			},
 		},
 		Webhooks:  map[string]dto.WebhookInfo{},
@@ -970,6 +972,22 @@ func (m *MockClient) RemoveRole(_ context.Context, guildID, userID, roleID strin
 }
 
 // ---------- Webhooks, Events & Interactions ----------
+
+// BotUserID mirrors Client.BotUserID for role-hierarchy checks.
+func (m *MockClient) BotUserID() string { return MockBotID }
+
+func (m *MockClient) GetWebhook(_ context.Context, webhookID string) (*dto.WebhookInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.record("GetWebhook", webhookID); err != nil {
+		return nil, err
+	}
+	w, ok := m.Webhooks[webhookID]
+	if !ok {
+		return nil, notFound("webhook", webhookID)
+	}
+	return &w, nil
+}
 
 func (m *MockClient) CreateWebhook(_ context.Context, channelID, name string) (*dto.WebhookInfo, error) {
 	m.mu.Lock()

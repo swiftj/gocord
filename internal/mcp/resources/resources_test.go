@@ -87,6 +87,7 @@ func TestGuildMapGolden(t *testing.T) {
 	}
 	want := `# Test Guild (100000000000000001) · 1,234 members · tier 2
 ## Roles
+- @MCP Bot (100000000000000041) pos 10 · ManageRoles · managed
 - @Moderator (100000000000000040) pos 5 · ManageMessages, KickMembers
 ## Channels
 - 📁 Community (100000000000000020)

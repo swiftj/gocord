@@ -38,6 +38,7 @@ The plugin is named `discord`, so commands namespace as `/discord:<cmd>`.
 - Components (`skills/`, `commands/`, `agents/`, `hooks/hooks.json`, `.mcp.json`) are discovered from their default locations, so the manifest does not list them.
 - `version` is kept in sync with the git tag by the release pipeline (spec 04).
 - The manifest must work in both Claude Code (`/plugin install`) and Claude Cowork.
+- `ecosystem/.claude-plugin/marketplace.json` is a local marketplace, so the plugin can be installed from a clone (`/plugin marketplace add ./ecosystem`). Before the first public release, add a root-level `.claude-plugin/marketplace.json` so `/plugin marketplace add <owner>/discord-mcp` works.
 
 ## 2. Connectors (`claude-plugin/.mcp.json`)
 ```json
@@ -89,7 +90,7 @@ Each skill has YAML frontmatter with `name` (matching the directory) and a `desc
 - **Safety:** Never impersonate real server members. Persona display names must be clearly bot or agent names.
 
 ## 4. Slash Commands (`claude-plugin/commands/*.md`)
-Each command has frontmatter `description`, `argument-hint`, and `allowed-tools` (scoped `mcp__discord-stdio__*` names). The body uses `$ARGUMENTS`.
+Each command has frontmatter `description`, `argument-hint`, and `allowed-tools`. Tool names are listed in **both** forms: `mcp__plugin_discord_discord-stdio__<tool>` (the name when the server comes from the plugin) and `mcp__discord-stdio__<tool>` (the name when the server is added standalone). The body uses `$ARGUMENTS`.
 
 | File | Invocation | Args | Behaviour |
 | :--- | :--- | :--- | :--- |
@@ -103,7 +104,7 @@ Frontmatter: `name`, `description`, `tools` (explicit comma-separated list), and
 
 ### `discord-ops-agent`
 - **Duties:** moderation, audit review, timeouts, and provisioning with dry-run.
-- **tools:** `mcp__discord-stdio__discord_get_server_info, discord_list_members, discord_manage_roles, discord_set_channel_permissions, discord_create_text_channel, discord_create_voice_channel, discord_create_category, discord_edit_channel, discord_delete_channel, discord_delete_message, discord_bulk_delete_messages, discord_governance_audit, discord_manage_threads, discord_await_interaction, ReadMcpResourceTool`. Write each tool as its full `mcp__discord-stdio__` name in the file.
+- **tools:** `mcp__discord-stdio__discord_get_server_info, discord_list_members, discord_manage_roles, discord_set_channel_permissions, discord_create_text_channel, discord_create_voice_channel, discord_create_category, discord_edit_channel, discord_delete_channel, discord_delete_message, discord_bulk_delete_messages, discord_governance_audit, discord_manage_threads, discord_await_interaction, ReadMcpResourceTool`. Write each tool by its full name in both forms (`mcp__plugin_discord_discord-stdio__<tool>` and `mcp__discord-stdio__<tool>`).
 - **Rules:** Dry-run first for every destructive action. Require HITL approval for deletes affecting more than 10 messages or any channel or role deletion. Summarise the actions taken with IDs.
 
 ### `discord-scribe-agent`

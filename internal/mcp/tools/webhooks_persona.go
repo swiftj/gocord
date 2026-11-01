@@ -16,6 +16,7 @@ import (
 	"github.com/local/discord-mcp/internal/dto"
 	"github.com/local/discord-mcp/internal/index"
 	"github.com/local/discord-mcp/internal/mcp/deps"
+	"github.com/local/discord-mcp/internal/policy"
 )
 
 const (
@@ -197,14 +198,20 @@ func webhookResolveThread(ctx context.Context, d deps.Deps, ref string) (*dto.Ch
 	return th, nil
 }
 
-// webhookGuildScope builds the policy op for a webhook whose channel is unknown
-// (Service has no GetWebhook): the target channel when given, else the
-// default/only guild.
-func webhookGuildScope(ctx context.Context, d deps.Deps, ch *dto.ChannelInfo) (string, error) {
-	if ch != nil {
-		return ch.GuildID, nil
+// webhookChannel returns the channel a webhook currently posts to, so policy
+// checks are scoped to the webhook's real channel and guild.
+func webhookChannel(ctx context.Context, d deps.Deps, webhookID string) (*dto.ChannelInfo, error) {
+	w, err := d.Discord.GetWebhook(ctx, webhookID)
+	if err != nil {
+		return nil, err
 	}
-	return resolveGuildRef(ctx, d, "")
+	return d.Discord.GetChannel(ctx, w.ChannelID)
+}
+
+// webhookAllowlisted reports whether guild or channel allowlists are configured;
+// sends to webhooks whose scope cannot be determined are then refused.
+func webhookAllowlisted(d deps.Deps) bool {
+	return d.Config != nil && (len(d.Config.AllowedGuilds) > 0 || len(d.Config.AllowedChannels) > 0)
 }
 
 // ---------- webhook CRUD ----------
@@ -279,6 +286,26 @@ func webhookSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 		}
 		wreq.ThreadID = th.ID
 		op = channelOp(webhookSendTool, th, opWrite, false)
+	} else {
+		// Fail fast in read-only mode before any lookup, then scope the check
+		// to the webhook's own channel and guild.
+		if err := d.Guard.Check(policy.Op{Tool: webhookSendTool, Write: true}); err != nil {
+			return errorResult(err)
+		}
+		hookID := wreq.WebhookID
+		if hookID == "" {
+			hookID = webhookURLRe.FindStringSubmatch(rawURL)[1]
+		}
+		ch, err := webhookChannel(ctx, d, hookID)
+		switch {
+		case err == nil:
+			op = channelOp(webhookSendTool, ch, opWrite, false)
+		case wreq.WebhookID != "":
+			return errorResult(err)
+		case webhookAllowlisted(d):
+			// A URL webhook the bot cannot inspect may target any server.
+			return errorf("denied by policy: cannot verify which server this webhook_url posts to while guild/channel allowlists are configured")
+		}
 	}
 	if err := d.Guard.Check(op); err != nil {
 		return errorResult(err)
@@ -326,17 +353,31 @@ func webhookEdit(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 		}
 		changes = append(changes, fmt.Sprintf("channel → #%s (%s)", ch.Name, ch.ID))
 	}
-	guildID, err := webhookGuildScope(ctx, d, ch)
+	if err := d.Guard.Check(policy.Op{Tool: webhookEditTool, Write: true, DryRun: dryRun(req)}); err != nil {
+		return errorResult(err) // read-only fast path, before any lookup
+	}
+	cur, err := webhookChannel(ctx, d, id)
 	if err != nil {
 		return errorResult(err)
 	}
-	op := channelOp(webhookEditTool, ch, opDestructive, dryRun(req))
-	op.GuildID = guildID
-	if dryRun(req) {
-		return dryRunResult(d, op, "webhook "+id, changes)
+	// The webhook's current channel and (when moving) its destination must both pass policy.
+	ops := []policy.Op{channelOp(webhookEditTool, cur, opDestructive, dryRun(req))}
+	if ch != nil {
+		ops = append(ops, channelOp(webhookEditTool, ch, opDestructive, dryRun(req)))
 	}
-	if err := d.Guard.Check(op); err != nil {
-		return errorResult(err)
+	if dryRun(req) {
+		p := d.Guard.Preview(ops[0], fmt.Sprintf("webhook %s in #%s", id, cur.Name), changes)
+		for _, extra := range ops[1:] {
+			if q := d.Guard.Preview(extra, "", nil); !q.Allowed && p.Allowed {
+				p.Allowed, p.DeniedReason = false, q.DeniedReason
+			}
+		}
+		return jsonResult(p)
+	}
+	for _, op := range ops {
+		if err := d.Guard.Check(op); err != nil {
+			return errorResult(err)
+		}
 	}
 	newName, newChannel := "", ""
 	if name != nil {
@@ -363,11 +404,17 @@ func webhookDelete(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *m
 	if err != nil {
 		return errorResult(err)
 	}
-	guildID, err := webhookGuildScope(ctx, d, nil)
+	if err := d.Guard.Check(policy.Op{Tool: webhookDeleteTool, Write: true, DryRun: dryRun(req)}); err != nil {
+		return errorResult(err) // read-only fast path, before any lookup
+	}
+	cur, err := webhookChannel(ctx, d, id)
 	if err != nil {
+		if errors.Is(err, discord.ErrNotFound) {
+			_ = d.Store.DeletePersonaWebhook(ctx, id)
+		}
 		return errorResult(err)
 	}
-	op := guildOp(webhookDeleteTool, guildID, opDestructive, dryRun(req))
+	op := channelOp(webhookDeleteTool, cur, opDestructive, dryRun(req))
 	if dryRun(req) {
 		return dryRunResult(d, op, "webhook "+id, []string{"delete webhook " + id + " (and its persona mapping, if any)"},
 			"messages already sent by this webhook remain; persona sends will provision a new webhook")

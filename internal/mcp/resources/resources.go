@@ -492,7 +492,7 @@ func (r *MentionResolver) Resolve(ctx context.Context, s string) string {
 			n, ok := r.channels[id]
 			if !ok {
 				if c, err := r.svc.GetChannel(ctx, id); err == nil {
-					n, ok = c.Name, true
+					n = c.Name
 				}
 				r.channels[id] = n
 			}
