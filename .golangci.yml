@@ -1,0 +1,47 @@
+# golangci-lint v2 configuration (see specs/04-release-and-ci.md §3).
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+    - gosec
+    - forbidigo
+  settings:
+    forbidigo:
+      # stdout carries stdio JSON-RPC frames; never print to it outside main.go.
+      analyze-types: true
+      forbid:
+        - pattern: ^fmt\.Print.*$
+          msg: "do not write to stdout (corrupts stdio JSON-RPC); log via slog to stderr"
+        - pattern: ^os\.Stdout$
+          msg: "do not use os.Stdout (corrupts stdio JSON-RPC); log via slog to stderr"
+    gosec:
+      excludes:
+        - G104 # duplicate of errcheck
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+    rules:
+      # main.go may print --version / --help output to stdout.
+      - path: ^cmd/discord-mcp/main\.go$
+        linters: [forbidigo]
+      # Tests may use fixed paths, weak randomness, and stdout freely.
+      - path: _test\.go$
+        linters: [gosec, forbidigo]
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true

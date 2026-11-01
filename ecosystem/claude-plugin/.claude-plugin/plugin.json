@@ -1,0 +1,10 @@
+{
+  "name": "discord",
+  "version": "0.1.0",
+  "description": "Discord MCP server with FTS5 search, HITL approvals, multi-persona webhooks, and governance dry-runs.",
+  "author": { "name": "discord-mcp contributors" },
+  "homepage": "https://github.com/OWNER/discord-mcp",
+  "repository": "https://github.com/OWNER/discord-mcp",
+  "license": "MIT",
+  "keywords": ["discord", "mcp", "community", "moderation", "hitl"]
+}

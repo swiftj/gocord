@@ -1,0 +1,13 @@
+{
+  "name": "discord-mcp",
+  "owner": { "name": "discord-mcp contributors" },
+  "plugins": [
+    {
+      "name": "discord",
+      "description": "Discord MCP server with FTS5 search, HITL approvals, multi-persona webhooks, and governance dry-runs.",
+      "author": { "name": "discord-mcp contributors" },
+      "category": "productivity",
+      "source": "./claude-plugin"
+    }
+  ]
+}

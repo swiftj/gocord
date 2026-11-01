@@ -1,0 +1,30 @@
+name: release
+
+on:
+  push: { tags: ["v*"] }
+
+permissions: { contents: write }
+
+# TODO(release): pin every third-party action to a full commit SHA, with the
+# version as a trailing comment, before the first public release (spec 04 §5).
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - name: Check plugin version matches tag
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(jq -r .version ecosystem/claude-plugin/.claude-plugin/plugin.json)"
+          if [ "$have" != "$want" ]; then
+            echo "::warning file=ecosystem/claude-plugin/.claude-plugin/plugin.json::plugin version $have does not match tag $want"
+          fi
+      - run: CGO_ENABLED=1 go test -race ./...
+      # Builds dist-dxt/*.dxt before GoReleaser so --clean does not wipe them.
+      - run: ./ecosystem/dxt/build-dxt.sh "${GITHUB_REF_NAME#v}"
+      - uses: goreleaser/goreleaser-action@v6
+        with: { distribution: goreleaser, version: "~> v2", args: release --clean }
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
