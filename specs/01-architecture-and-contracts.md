@@ -15,7 +15,7 @@
 ## 2. Locked Stack
 | Concern | Choice |
 | :--- | :--- |
-| Language | Go 1.24+, `CGO_ENABLED=0` for every shipped artifact |
+| Language | Go 1.26+ (required by `mcp-go` v1.5.0), `CGO_ENABLED=0` for every shipped artifact |
 | Module | `github.com/local/discord-mcp` (keep an existing `go.mod` path if present) |
 | MCP SDK | `github.com/mark3labs/mcp-go`: `server.NewMCPServer`, `server.ServeStdio`, `server.NewStreamableHTTPServer` (endpoint `/mcp`) |
 | Discord | `github.com/bwmarrin/discordgo` (REST + Gateway v10) |
@@ -114,6 +114,7 @@ type Service interface {
 
 	// Channels & Categories
 	ListChannels(ctx context.Context, guildID string) ([]dto.ChannelInfo, error)
+	GetChannel(ctx context.Context, channelID string) (*dto.ChannelInfo, error) // added in Wave 1
 	CreateChannel(ctx context.Context, req dto.CreateChannelReq) (*dto.ChannelInfo, error)
 	EditChannel(ctx context.Context, req dto.EditChannelReq) (*dto.ChannelInfo, error)
 	DeleteChannel(ctx context.Context, channelID, reason string) error
@@ -164,6 +165,8 @@ type Service interface {
 ```
 
 ### Interface notes
+- `GetChannel` was added during Wave 1. Channel-only tools need it to find the channel's guild (for allowlist checks) and a thread's parent, and to fetch the current state that dry-run previews compare against.
+- `ParseRef` and `NameMatches` in `internal/discord/ref.go` are the single parser for `#name`, `@name`, `<#id>`, `<@id>`, `<@!id>`, `<@&id>`, and raw IDs. `resolver.go` MUST use them.
 - `EditRole` takes `guildID` through `req.GuildID` (Discord's role endpoints are guild-scoped).
 - Resolver methods accept a raw Snowflake (returned unchanged), `#name`, `name`, or a `<#id>`/`<@id>`/`<@!id>` mention. Ambiguous names return `ErrAmbiguous` listing the candidate IDs. Unknown names return `ErrNotFound`.
 - Export sentinel errors from `internal/discord`: `ErrNotFound`, `ErrAmbiguous`, `ErrForbidden`, `ErrRateLimited`, `ErrNotLoggedIn`.
@@ -255,21 +258,26 @@ Profiles reference tokens through `token_env` (the name of an env var), never in
 type Guard struct { /* built from config.Config */ }
 
 type Op struct {
-	Tool        string // e.g. "discord_delete_channel"
-	Destructive bool   // mutates or deletes Discord state
-	GuildID     string
-	ChannelID   string
-	DryRun      bool
+	Tool            string   // e.g. "discord_delete_channel"
+	Write           bool     // changes Discord state (send/create/edit/delete/react)
+	Destructive     bool     // in DestructiveTools; implies the tool accepts dry_run
+	GuildID         string
+	ChannelID       string
+	ParentChannelID string   // parent when ChannelID is a thread
+	MessageIDs      []string // bulk-delete validation
+	DryRun          bool
 }
 
 func New(cfg *config.Config) *Guard
-func (g *Guard) Check(op Op) error                       // returns *DeniedError (wraps ErrDenied)
-func (g *Guard) Preview(op Op, changes []string) dto.DryRunPreview
-func (g *Guard) IsDestructive(tool string) bool
+func (g *Guard) Check(op Op) error // nil or *DeniedError (wraps ErrDenied)
+func (g *Guard) Preview(op Op, target string, changes []string, warnings ...string) dto.DryRunPreview
+func (g *Guard) IsDestructive(toolOrToolAction string) bool // e.g. "discord_manage_roles:delete"
+func (g *Guard) GuildAllowed(guildID string) bool          // for filtering list outputs
+func (g *Guard) ChannelAllowed(channelID string) bool
 ```
 
 ### Rules, evaluated in order. The first denial wins.
-1. **Read-only:** If `ReadOnly` and `op.Destructive && !op.DryRun`, deny with `"read-only mode: <tool> is disabled"`. Dry runs are always allowed so Claude can still plan.
+1. **Read-only:** If `ReadOnly` and `(op.Write || op.Destructive) && !op.DryRun`, deny with `"read-only mode: <tool> is disabled"`. Dry runs are always allowed so Claude can still plan.
 2. **Guild blocklist:** If `GuildID` is in `BlockedGuilds`, deny.
 3. **Guild allowlist:** If `AllowedGuilds` is non-empty and `GuildID` is non-empty and not in it, deny.
 4. **Channel blocklist / allowlist:** Same as rules 2–3 for `ChannelID`. A thread is evaluated against its parent channel as well (the caller passes the parent ID if known).
@@ -278,7 +286,7 @@ func (g *Guard) IsDestructive(tool string) bool
 
 ### Destructive tool set
 `discord_delete_message`, `discord_bulk_delete_messages`, `discord_delete_channel`, `discord_edit_channel`, `discord_set_channel_permissions`, `discord_manage_roles` (all actions except `list`), `discord_delete_webhook`, `discord_edit_webhook`, `discord_governance_audit` (`timeout_member`), `discord_manage_threads` (`archive`/`lock`).
-Sending, reacting, and creating are **write** operations, not destructive. Read-only mode also blocks them. Treat every non-read tool as `Destructive: true` for rule 1, and use the set above only to decide which tools **must** accept `dry_run`.
+Sending, reacting, and creating are **write** operations (`Op.Write`), not destructive. Read-only mode blocks them as well. `policy.DestructiveTools` holds the set above, keyed as `tool` or `tool:action`.
 
 ### Dry run
 When `dry_run: true`, the tool resolves all references, runs `Guard.Check`, and fetches current state where cheap (e.g. the existing overwrite for a permission change). It returns `DryRunPreview` with human-readable `Changes` such as `"#general: role @Moderator allow +ManageMessages"` and makes **zero** mutating API calls.
@@ -287,7 +295,7 @@ When `dry_run: true`, the tool resolves all references, runs `Guard.Check`, and 
 `client.go` wraps discordgo's rate-limit callbacks and logs (stderr) `route`, `remaining`, `reset_after`, and `bucket` at `debug`, and 429s at `warn`. The last-seen values are exposed through `Guard`/`Client` for inclusion in error messages.
 
 ## 8. SQLite FTS5 Index (`internal/index/store.go`)
-- Open with `sql.Open("sqlite", dsn)`. For `:memory:`, use `file::memory:?cache=shared` with `db.SetMaxOpenConns(1)` so every connection sees the same database. For disk paths, create parent dirs with `0700` and the file with `0600`, then set `PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;`.
+- Open with `sql.Open("sqlite", dsn)`. For `:memory:`, use a private (not `cache=shared`) in-memory DB with `SetMaxOpenConns(1)`. That one connection sees all the data, and separate `Store`s stay isolated (needed for parallel tests). For disk paths, create parent dirs with `0700` and the file with `0600`, then set pragmas through the DSN (`_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)`) so they apply to every pooled connection.
 - Track schema version with `PRAGMA user_version`. Migrations are idempotent `CREATE ... IF NOT EXISTS`.
 
 ```sql
@@ -355,16 +363,17 @@ CREATE TABLE IF NOT EXISTS persona_webhooks (
 );
 ```
 
-### Store API (Wave 1 stub, implemented by `infra-and-index`)
+### Store API (implemented and tested in Wave 1; `infra-and-index` consumes it)
 ```go
 type Store struct{ /* *sql.DB */ }
 
 func Open(ctx context.Context, path string) (*Store, error)
 func (s *Store) Close() error
-func (s *Store) UpsertMessage(ctx context.Context, guildID string, m dto.MessageItem) error
-func (s *Store) UpsertMessages(ctx context.Context, guildID string, ms []dto.MessageItem) error // single tx
+func (s *Store) UpsertMessage(ctx context.Context, guildID, threadParentID string, m dto.MessageItem) error
+func (s *Store) UpsertMessages(ctx context.Context, guildID, threadParentID string, ms []dto.MessageItem) error // single tx
 func (s *Store) MarkDeleted(ctx context.Context, channelID, messageID string) error
 func (s *Store) Search(ctx context.Context, q dto.SearchQuery) ([]dto.SearchHit, error)
+func (s *Store) SearchEx(ctx context.Context, q dto.SearchQuery) ([]dto.SearchHit, string /*warning*/, error)
 func (s *Store) Coverage(ctx context.Context, channelID string) (oldestID, newestID string, full bool, err error)
 func (s *Store) UpdateCoverage(ctx context.Context, channelID, guildID, oldestID, newestID string, full bool) error
 func (s *Store) UpsertPersona(ctx context.Context, p dto.Persona) error
@@ -372,7 +381,9 @@ func (s *Store) GetPersona(ctx context.Context, name string) (*dto.Persona, erro
 func (s *Store) ListPersonas(ctx context.Context) ([]dto.Persona, error)
 func (s *Store) GetPersonaWebhook(ctx context.Context, channelID string) (id, token string, err error)
 func (s *Store) PutPersonaWebhook(ctx context.Context, channelID, id, token string) error
+func (s *Store) DeletePersonaWebhook(ctx context.Context, webhookID string) error
 ```
+`threadParentID` is the parent channel when the message's channel is a thread (`""` otherwise), so channel-scoped searches include thread replies. `GetPersona`/`GetPersonaWebhook` return errors wrapping `index.ErrNotFound`.
 
 ### Search semantics
 - `Query` is passed to `MATCH` as FTS5 syntax (`AND`/`OR`/`NOT`, `"phrase"`, `prefix*`). On an FTS5 syntax error, retry once with the query quoted as a phrase and add a warning to the result.
@@ -385,33 +396,11 @@ func (s *Store) PutPersonaWebhook(ctx context.Context, channelID, id, token stri
 - Indexing runs on a buffered channel worker (capacity 1024). If the buffer is full, drop and count at `warn`. Never block the Gateway goroutine.
 - The guild/channel/role/member cache in `resolver.go` updates from the same events (`GuildCreate`, `ChannelCreate/Update/Delete`, `GuildRoleCreate/Update/Delete`, `GuildMemberAdd/Update/Remove`).
 
-## 9. MCP Server Bootstrap (`internal/mcp/server.go`)
-```go
-type Deps struct {
-	Discord discord.Service
-	Store   *index.Store
-	Guard   *policy.Guard
-	Config  *config.Config
-	Logger  *slog.Logger
-}
-
-func NewServer(deps Deps, version string) *server.MCPServer
-
-// Registration hooks: one per tool file. Each Wave 2 owner implements its own.
-func RegisterGuildTools(s *server.MCPServer, d Deps)
-func RegisterChannelTools(s *server.MCPServer, d Deps)
-func RegisterMessageTools(s *server.MCPServer, d Deps)
-func RegisterSearchTools(s *server.MCPServer, d Deps)
-func RegisterForumThreadTools(s *server.MCPServer, d Deps)
-func RegisterReactionPollTools(s *server.MCPServer, d Deps)
-func RegisterMemberRoleTools(s *server.MCPServer, d Deps)
-func RegisterWebhookPersonaTools(s *server.MCPServer, d Deps)
-func RegisterEventTools(s *server.MCPServer, d Deps)
-func RegisterInteractionTools(s *server.MCPServer, d Deps)
-func RegisterResources(s *server.MCPServer, d Deps)
-func RegisterPrompts(s *server.MCPServer, d Deps)
-```
-To avoid an import cycle (`tools` → `mcp`), put `Deps` in a leaf package `internal/mcp/deps`, and have each `tools`/`resources`/`prompts` package export `Register(s *server.MCPServer, d deps.Deps)` style functions that `server.go` calls. Wave 1 creates empty stubs for every hook so `go build ./...` passes.
+## 9. MCP Server Bootstrap (`internal/mcp/`)
+- `internal/mcp/deps/deps.go`: `type Deps struct { Discord discord.Service; Store *index.Store; Guard *policy.Guard; Config *config.Config; Logger *slog.Logger }`. It is a leaf package, which avoids a `tools` → `mcp` import cycle.
+- `internal/mcp/server.go`: `NewServer(d deps.Deps, version string) *server.MCPServer` calls every hook in order:
+  `tools.Register{Guild,Channel,Message,Search,ForumThread,ReactionPoll,MemberRole,WebhookPersona,Event,Interaction}Tools`, `resources.Register`, `prompts.Register`. Each hook has the signature `func(*server.MCPServer, deps.Deps)` and lives in the file it registers.
+- `internal/mcp/tools/helpers.go` and `helpers_test.go` are **Lead-owned shared helpers** in package `tools`. They provide `jsonResult`, `listResult`, `errorResult`, `errorf`, `hasArg`/`optString`/`optBool`/`dryRun`/`objectArg`/`cursorArg`/`clamp`, `resolveGuild`/`resolveGuildRef`/`resolveChannel`/`resolveUser`/`resolveRole`, `channelOp`/`guildOp` with `opRead`/`opWrite`/`opDestructive`, `dryRunResult`, `parsePermissions`/`permissionNames`/`parseColor`/`containsFold`, and the test harness `newTestDeps`/`newTestServer`/`callTool`/`resultText`/`decodeResult`. Wave 2 teammates reuse these and never redefine them. File-private helpers take a file-specific prefix to avoid collisions in the shared package.
 
 ## 10. Testing Requirements
 - Every package with logic has `_test.go` files. Tool tests drive handlers through `MockClient` and a `:memory:` `index.Store`. No test touches the network.

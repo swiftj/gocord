@@ -3,7 +3,7 @@
 Zero-dependency Golang Discord MCP server (`stdio` + `Streamable HTTP`) with embedded SQLite FTS5 search, Human-in-the-Loop (HITL) Discord interactions, Multi-Persona webhook routing, and a complete Claude Desktop (`.dxt`), Cowork, and Code (`.claude-plugin`) suite.
 
 ## 1. Locked Technical Stack
-- **Language:** Go 1.24+ (`CGO_ENABLED=0` mandatory on all builds and tests).
+- **Language:** Go 1.26+ (minimum required by `mcp-go` v1.5.0). `CGO_ENABLED=0` mandatory on all builds and non-race tests; race tests use `CGO_ENABLED=1` (Linux `-race` requires cgo — see `specs/04-release-and-ci.md` §2).
 - **Target Platforms:** `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`.
 - **Core Dependencies:**
   - MCP SDK: `github.com/mark3labs/mcp-go` (`stdio` & `Streamable HTTP` on `/mcp`)
@@ -19,7 +19,7 @@ Zero-dependency Golang Discord MCP server (`stdio` + `Streamable HTTP`) with emb
 ## 3. Essential Commands
 - **Build Local Binary:** `make build` (`CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/discord-mcp ./cmd/discord-mcp`)
 - **Cross-Compile Matrix (macOS/Linux):** `make build-all`
-- **Test & Race Check:** `make test` (`CGO_ENABLED=0 go test -v -race ./...`)
+- **Test:** `make test` (`CGO_ENABLED=0 go test -v ./...`) · **Race Check:** `make test-race` (`CGO_ENABLED=1 go test -race ./...`)
 - **Lint & Vet:** `make lint` (`go vet ./... && golangci-lint run`)
 - **Dry-Run Release:** `goreleaser release --snapshot --clean`
 - **Package Desktop Extension:** `./ecosystem/dxt/build-dxt.sh`
@@ -47,8 +47,8 @@ Path-scoped rules in `.claude/rules/*.md` load automatically when you touch matc
 Spawn 4 parallel teammates. Each teammate reads ONLY its assigned spec file(s):
 
 1. **`infra-and-index`** (Read `specs/01-architecture-and-contracts.md`)
-   - **Owns:** `cmd/discord-mcp/`, `internal/discord/client.go`, `internal/discord/resolver.go`, `internal/index/`
-   - **Deliverable:** Live `discordgo` wrapper, `#channel`/`@user` Snowflake resolver, CGO-free SQLite FTS5 indexer (`:memory:` & disk), and CLI (`stdio` + `http`).
+   - **Owns:** `cmd/discord-mcp/`, `internal/discord/client.go`, `internal/discord/resolver.go` (+ their tests), `go.mod`/`go.sum` (sole owner of dependency changes)
+   - **Deliverable:** Live `discordgo` wrapper (incl. HITL interaction broker), `#channel`/`@user` Snowflake resolver, Gateway → `index.Store` ingestion, and CLI (`stdio` + `http`). The FTS5 `internal/index` store was completed in Wave 1 (Lead-owned).
 2. **`mcp-baseline-tools`** (Read `specs/02-mcp-surface.md`)
    - **Owns:** `internal/mcp/tools/{guilds,channels,messages,forums_threads,reactions_polls,members_roles}.go`, `internal/mcp/resources/`
    - **Deliverable:** All 28 baseline tools + Polls, Threads, Governance Audit, `discord://` Resources (`map`, `transcript`), and unit tests.
