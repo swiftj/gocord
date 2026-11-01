@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push: { branches: [main] }
+  pull_request:
+
+permissions: { contents: read }
+
+concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
+
+# TODO(release): pin every third-party action to a full commit SHA, with the
+# version as a trailing comment, before the first public release (spec 04 §5).
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - name: gofmt
+        run: test -z "$(gofmt -s -l .)"
+      - run: go vet ./...
+      # .golangci.yml uses the v2 schema, which requires golangci-lint-action v7+.
+      - uses: golangci/golangci-lint-action@v8
+        with: { version: v2.15 }
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, macos-latest] }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - run: CGO_ENABLED=0 go test ./...
+      # -race needs cgo on Linux (spec 04 §2); modernc.org/sqlite stays pure Go.
+      - run: CGO_ENABLED=1 go test -race ./...
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - run: make build-all
+      - run: make smoke
+      - run: ./ecosystem/dxt/build-dxt.sh "ci-${{ github.sha }}"
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }

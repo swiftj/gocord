@@ -1,0 +1,46 @@
+# GoReleaser v2 — see specs/04-release-and-ci.md §4.
+# The release workflow runs ecosystem/dxt/build-dxt.sh first; bundles land in
+# dist-dxt/ (not dist/, which --clean wipes) and are attached + checksummed here.
+version: 2
+project_name: discord-mcp
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: discord-mcp
+    main: ./cmd/discord-mcp
+    binary: discord-mcp
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}"]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+  extra_files:
+    - glob: ./dist-dxt/*.dxt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  filters:
+    exclude: ["^docs:", "^chore:", "^test:"]
+
+release:
+  draft: false
+  prerelease: auto
+  extra_files:
+    - glob: ./dist-dxt/*.dxt

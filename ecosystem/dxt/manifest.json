@@ -1,0 +1,95 @@
+{
+  "dxt_version": "0.1",
+  "name": "discord-mcp",
+  "display_name": "Discord",
+  "version": "0.1.0",
+  "description": "Discord MCP server with FTS5 search, HITL approvals, and multi-persona webhooks.",
+  "long_description": "A static, CGO-free Go MCP server for Discord: 37 tools, discord:// resources with live subscriptions, prompts, an embedded SQLite FTS5 search index, human-in-the-loop buttons/selects/modals, multi-persona webhooks, and a governance policy engine with read-only mode, allowlists, and dry-run previews.",
+  "author": { "name": "discord-mcp contributors" },
+  "license": "MIT",
+  "keywords": ["discord", "mcp", "community", "moderation", "hitl"],
+  "icon": "icon.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "bin/discord-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/bin/discord-mcp",
+      "args": ["--transport", "stdio"],
+      "env": {
+        "DISCORD_BOT_TOKEN": "${user_config.discord_bot_token}",
+        "DISCORD_MCP_DEFAULT_GUILD_ID": "${user_config.default_guild_id}",
+        "DISCORD_MCP_DB_PATH": "${user_config.db_path}",
+        "DISCORD_MCP_READ_ONLY": "${user_config.read_only_mode}"
+      }
+    }
+  },
+  "user_config": {
+    "discord_bot_token": {
+      "type": "string",
+      "title": "Discord Bot Token",
+      "description": "Bot token from the Discord Developer Portal.",
+      "sensitive": true,
+      "required": true
+    },
+    "default_guild_id": {
+      "type": "string",
+      "title": "Default Server ID",
+      "description": "Optional guild Snowflake used when a tool omits guild_id.",
+      "required": false
+    },
+    "db_path": {
+      "type": "string",
+      "title": "Search Index Path",
+      "description": ":memory: (RAM only) or a file path for a persistent index.",
+      "default": ":memory:",
+      "required": false
+    },
+    "read_only_mode": {
+      "type": "boolean",
+      "title": "Read-only Mode",
+      "description": "Block all write and destructive tools.",
+      "default": false,
+      "required": false
+    }
+  },
+  "tools": [
+    { "name": "discord_login", "description": "Authenticate or switch the active bot profile." },
+    { "name": "discord_list_servers", "description": "List the guilds the bot belongs to with member counts and owners." },
+    { "name": "discord_get_server_info", "description": "Get guild metadata, channels, roles, boost tier, and features." },
+    { "name": "discord_send", "description": "Send text, an embed, or a file attachment to a channel or thread." },
+    { "name": "discord_read_messages", "description": "Read message history with resolved mentions." },
+    { "name": "discord_edit_message", "description": "Edit a bot-authored message." },
+    { "name": "discord_delete_message", "description": "Delete a message (supports dry_run)." },
+    { "name": "discord_bulk_delete_messages", "description": "Bulk delete 2-100 messages younger than 14 days (supports dry_run)." },
+    { "name": "discord_add_reaction", "description": "Add an emoji reaction to a message." },
+    { "name": "discord_add_multiple_reactions", "description": "Add an ordered list of emoji reactions to a message." },
+    { "name": "discord_remove_reaction", "description": "Remove an emoji reaction from a message." },
+    { "name": "discord_create_text_channel", "description": "Create a text or announcement channel." },
+    { "name": "discord_create_voice_channel", "description": "Create a voice or stage channel." },
+    { "name": "discord_create_category", "description": "Create a channel category." },
+    { "name": "discord_edit_channel", "description": "Edit a channel's name, topic, category, or archive state (supports dry_run)." },
+    { "name": "discord_delete_channel", "description": "Delete a channel (supports dry_run)." },
+    { "name": "discord_set_channel_permissions", "description": "Set or remove role/member permission overwrites on a channel (supports dry_run)." },
+    { "name": "discord_create_forum_channel", "description": "Create a forum channel with tags and a default reaction." },
+    { "name": "discord_create_forum_post", "description": "Start a forum post with an initial message and tags." },
+    { "name": "discord_get_forum_post", "description": "Fetch a forum post's starter message and replies." },
+    { "name": "discord_reply_to_forum", "description": "Reply inside a forum post." },
+    { "name": "discord_list_forum_threads", "description": "List active and optionally archived posts in a forum." },
+    { "name": "discord_list_members", "description": "List guild members with roles and join dates." },
+    { "name": "discord_manage_roles", "description": "List, create, edit, delete, assign, or revoke roles (supports dry_run)." },
+    { "name": "discord_create_webhook", "description": "Create a channel webhook (token never returned)." },
+    { "name": "discord_send_webhook_message", "description": "Send a message through a webhook." },
+    { "name": "discord_edit_webhook", "description": "Rename or move a webhook (supports dry_run)." },
+    { "name": "discord_delete_webhook", "description": "Delete a webhook (supports dry_run)." },
+    { "name": "discord_search_messages", "description": "Full-text FTS5 search over indexed messages with automatic REST backfill." },
+    { "name": "discord_await_interaction", "description": "Post buttons, a select menu, or a modal and wait for an authorised human response." },
+    { "name": "discord_persona_register", "description": "Register or update a reusable webhook persona." },
+    { "name": "discord_persona_send", "description": "Send a message as a registered persona via an auto-managed webhook." },
+    { "name": "discord_create_poll", "description": "Create a native Discord poll." },
+    { "name": "discord_get_poll_results", "description": "Get poll vote tallies and winners." },
+    { "name": "discord_manage_threads", "description": "Create, archive, unarchive, lock, or unlock threads (supports dry_run)." },
+    { "name": "discord_manage_events", "description": "List or create guild scheduled events." },
+    { "name": "discord_governance_audit", "description": "Query audit logs, list AutoMod rules, or time out a member (supports dry_run)." }
+  ],
+  "compatibility": { "platforms": ["darwin", "linux"] }
+}

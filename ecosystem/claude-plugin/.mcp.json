@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "discord-stdio": {
+      "command": "discord-mcp",
+      "args": ["--transport", "stdio"],
+      "env": {
+        "DISCORD_BOT_TOKEN": "${DISCORD_BOT_TOKEN}",
+        "DISCORD_MCP_DB_PATH": "${DISCORD_MCP_DB_PATH:-:memory:}",
+        "DISCORD_MCP_READ_ONLY": "${DISCORD_MCP_READ_ONLY:-false}"
+      }
+    },
+    "discord-http": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
