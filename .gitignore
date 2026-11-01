@@ -1,0 +1,17 @@
+/bin/
+/dist/
+/dist-dxt/
+*.dxt
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+*.test
+*.out
+coverage.*
+.DS_Store
+.idea/
+.vscode/
+.claude/settings.local.json
