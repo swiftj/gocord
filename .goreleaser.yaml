@@ -18,6 +18,9 @@ builds:
     ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}"]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64 # Apple Silicon only; Intel Macs are not supported
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:

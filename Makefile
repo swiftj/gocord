@@ -5,7 +5,7 @@ DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 BINARY         := bin/discord-mcp
-PLATFORMS      := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
+PLATFORMS      := darwin/arm64 linux/amd64 linux/arm64
 EXPECTED_TOOLS ?= 37
 
 # JSON-RPC frames for the stdio smoke test (newline-delimited).

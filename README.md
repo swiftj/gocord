@@ -54,7 +54,7 @@ Download the archive for your platform from
 ```sh
 VERSION=0.1.0
 OS=darwin      # or linux
-ARCH=arm64     # or amd64
+ARCH=arm64     # linux also has amd64; macOS is Apple Silicon only
 curl -LO "https://github.com/OWNER/discord-mcp/releases/download/v${VERSION}/discord-mcp_${VERSION}_${OS}_${ARCH}.tar.gz"
 curl -LO "https://github.com/OWNER/discord-mcp/releases/download/v${VERSION}/checksums.txt"
 
@@ -199,7 +199,7 @@ make test        # CGO_ENABLED=0 go test -v ./...
 make test-race   # CGO_ENABLED=1 go test -race ./...  (race runtime needs cgo on Linux)
 make lint        # go vet + golangci-lint
 make smoke       # stdio initialize + tools/list, asserts 37 tools
-make build-all   # darwin/linux × amd64/arm64 → dist/
+make build-all   # darwin/arm64, linux/amd64, linux/arm64 → dist/
 make dxt         # Claude Desktop bundles → dist-dxt/
 ```
 

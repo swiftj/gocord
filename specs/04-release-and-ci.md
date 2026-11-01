@@ -6,7 +6,6 @@
 | GOOS | GOARCH |
 | :--- | :--- |
 | darwin | arm64 |
-| darwin | amd64 |
 | linux | amd64 |
 | linux | arm64 |
 
@@ -17,7 +16,7 @@ CGO_ENABLED=0 go build -trimpath \
   -o bin/discord-mcp ./cmd/discord-mcp
 ```
 `cmd/discord-mcp/main.go` declares `var version, commit, date = "dev", "none", "unknown"`.
-Windows is out of scope for v1. Do not add it to the matrix.
+Windows is out of scope for v1. Do not add it to the matrix. Intel Macs (`darwin/amd64`) are not supported; do not add them back.
 
 ## 2. Race Detector Caveat (verified)
 `go test -race` with `CGO_ENABLED=0` works on **darwin** but fails on **linux** with `go: -race requires cgo`. So:
@@ -60,6 +59,9 @@ builds:
     ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}"]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64
     mod_timestamp: "{{ .CommitTimestamp }}"
 archives:
   - formats: [tar.gz]

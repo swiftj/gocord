@@ -172,9 +172,8 @@ Frontmatter: `name`, `description`, `tools` (explicit comma-separated list), and
 
 ### `build-dxt.sh`
 - Usage: `build-dxt.sh [version]` (defaults to `git describe --tags --always`).
-- For each target in `darwin/arm64 darwin/amd64 linux/amd64 linux/arm64`: build with `CGO_ENABLED=0 GOOS GOARCH go build -trimpath -ldflags="-s -w -X main.version=…"` into a staging dir `dist-dxt/stage/<os>_<arch>/bin/discord-mcp`, then copy `manifest.json` (with `version` and `compatibility.platforms` set to the single OS via `jq`) and `icon.png`.
+- For each target in `darwin/arm64 linux/amd64 linux/arm64`: build with `CGO_ENABLED=0 GOOS GOARCH go build -trimpath -ldflags="-s -w -X main.version=…"` into a staging dir `dist-dxt/stage/<os>_<arch>/bin/discord-mcp`, then copy `manifest.json` (with `version` and `compatibility.platforms` set to the single OS via `jq`) and `icon.png`.
 - Zip each staging dir to `dist-dxt/discord-mcp_<version>_<os>_<arch>.dxt`, then remove `dist-dxt/stage/`. Write to `dist-dxt/`, never `dist/`, because GoReleaser `--clean` wipes `dist/`. (a `.dxt` is a zip). If `npx @anthropic-ai/dxt` is available, run `dxt validate` first.
-- Optional `--universal-darwin`: `lipo` the two darwin binaries into one `discord-mcp_<version>_darwin_universal.dxt` (macOS hosts only).
 - `set -euo pipefail`, no network access other than `go` module download, and it prints the produced paths.
 
 ## 8. Docs (`docs/`)

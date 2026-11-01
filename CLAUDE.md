@@ -4,7 +4,7 @@ Zero-dependency Golang Discord MCP server (`stdio` + `Streamable HTTP`) with emb
 
 ## 1. Locked Technical Stack
 - **Language:** Go 1.26+ (minimum required by `mcp-go` v1.5.0). `CGO_ENABLED=0` mandatory on all builds and non-race tests; race tests use `CGO_ENABLED=1` (Linux `-race` requires cgo — see `specs/04-release-and-ci.md` §2).
-- **Target Platforms:** `darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`.
+- **Target Platforms:** `darwin/arm64`, `linux/amd64`, `linux/arm64`. Intel Macs (`darwin/amd64`) are not supported.
 - **Core Dependencies:**
   - MCP SDK: `github.com/mark3labs/mcp-go` (`stdio` & `Streamable HTTP` on `/mcp`)
   - Discord: `github.com/bwmarrin/discordgo` (REST + Gateway v10)
@@ -57,9 +57,9 @@ Spawn 4 parallel teammates. Each teammate reads ONLY its assigned spec file(s):
    - **Deliverable:** FTS5 `discord_search_messages` with REST backfill, HITL `discord_await_interaction`, Multi-Persona webhook engine, Scheduled Events, Prompts, and unit tests.
 4. **`ecosystem-and-release`** (Read `specs/03-claude-ecosystem.md` & `specs/04-release-and-ci.md`)
    - **Owns:** `ecosystem/`, `.github/workflows/`, `.goreleaser.yaml`, `Makefile`, `docs/`, `README.md`, `LICENSE`, `SECURITY.md`
-   - **Deliverable:** `.claude-plugin`, `.dxt` packager, Skills, Commands, Agents, Hooks, GitHub Actions CI + Release pipelines for `darwin/{arm64,amd64}` and `linux/{amd64,arm64}`.
+   - **Deliverable:** `.claude-plugin`, `.dxt` packager, Skills, Commands, Agents, Hooks, GitHub Actions CI + Release pipelines for `darwin/arm64` and `linux/{amd64,arm64}`.
 
 ### Wave 3: Integration & Release Verification (Lead Agent)
 1. Wire all registrations in `internal/mcp/server.go` and `cmd/discord-mcp/main.go`.
-2. Run `make test` and `make build-all` to verify all 4 macOS/Linux binaries compile cleanly.
+2. Run `make test` and `make build-all` to verify all 3 macOS/Linux binaries compile cleanly.
 3. Smoke-test `stdio` JSON-RPC `initialize` and `tools/list` (verifying all 37 tools).

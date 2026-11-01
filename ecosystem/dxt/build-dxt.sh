@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
 # build-dxt.sh — package discord-mcp as Claude Desktop Extensions (.dxt).
 #
-# Usage: ecosystem/dxt/build-dxt.sh [--universal-darwin] [version]
+# Usage: ecosystem/dxt/build-dxt.sh [version]
 #
-#   version             defaults to `git describe --tags --always` (leading "v" stripped)
-#   --universal-darwin  also produce a darwin_universal bundle via lipo (macOS hosts only)
+#   version  defaults to `git describe --tags --always` (leading "v" stripped)
 #
 # Output: dist-dxt/discord-mcp_<version>_<os>_<arch>.dxt (one per target).
+# macOS targets Apple Silicon only; Intel Macs are not supported.
 # Writes to dist-dxt/ (never dist/, which `goreleaser --clean` wipes).
 # Diagnostics go to stderr; the produced bundle paths are printed to stdout.
 # Portable across macOS (BSD) and Linux (GNU) userlands.
 set -euo pipefail
 
-TARGETS="darwin/arm64 darwin/amd64 linux/amd64 linux/arm64"
-UNIVERSAL=0
+TARGETS="darwin/arm64 linux/amd64 linux/arm64"
 VERSION=""
 
 for arg in "$@"; do
   case "$arg" in
-    --universal-darwin) UNIVERSAL=1 ;;
     -h|--help) sed -n '2,12p' "$0" >&2; exit 0 ;;
     -*) echo "build-dxt: unknown option: $arg" >&2; exit 2 ;;
     *) VERSION="$arg" ;;
@@ -118,24 +116,6 @@ for target in $TARGETS; do
   arch="${target#*/}"
   write_manifest "$STAGE_ROOT/${os}_${arch}" "$os"
 done
-
-if [ "$UNIVERSAL" -eq 1 ]; then
-  if [ "$(uname -s)" = "Darwin" ] && command -v lipo >/dev/null 2>&1; then
-    udir="$STAGE_ROOT/darwin_universal"
-    mkdir -p "$udir/bin"
-    if lipo -create -output "$udir/bin/discord-mcp" \
-        "$STAGE_ROOT/darwin_arm64/bin/discord-mcp" \
-        "$STAGE_ROOT/darwin_amd64/bin/discord-mcp" >&2; then
-      write_manifest "$udir" darwin
-      TARGETS="$TARGETS darwin/universal"
-    else
-      log "warning: lipo failed; skipping darwin_universal bundle"
-      rm -rf "$udir"
-    fi
-  else
-    log "warning: --universal-darwin needs macOS with lipo; skipping"
-  fi
-fi
 
 # --- 4. Validate (offline only) ---------------------------------------------
 DXT_CLI=""
