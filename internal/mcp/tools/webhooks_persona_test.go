@@ -68,16 +68,6 @@ func TestWebhookPolicyDenials(t *testing.T) {
 	if len(mock.MutatingCalls()) != 0 {
 		t.Fatalf("mutating calls under read-only: %+v", mock.MutatingCalls())
 	}
-
-	d2, mock2 := newTestDeps(t, &config.Config{BlockedGuilds: []string{discord.MockGuildID}})
-	s2 := newTestServer(t, d2, RegisterWebhookPersonaTools)
-	res := callTool(t, s2, webhookCreateTool, map[string]any{"channel_id": "#general", "name": "x"})
-	if !res.IsError || !strings.Contains(resultText(t, res), "blocked") {
-		t.Fatalf("blocked guild: %s", resultText(t, res))
-	}
-	if len(mock2.MutatingCalls()) != 0 {
-		t.Fatal("mutating call in blocked guild")
-	}
 }
 
 func TestSendWebhookMessage(t *testing.T) {
@@ -316,14 +306,16 @@ func TestPersonaSendErrors(t *testing.T) {
 }
 
 func TestPersonaSendPolicy(t *testing.T) {
-	d, mock := newTestDeps(t, &config.Config{BlockedChannels: []string{discord.MockGeneralID}})
+	d, mock := newTestDeps(t, &config.Config{ReadOnly: true})
+	if err := d.Store.UpsertPersona(context.Background(), dto.Persona{Name: "scribe", DisplayName: "Scribe"}); err != nil {
+		t.Fatal(err)
+	}
 	s := newTestServer(t, d, RegisterWebhookPersonaTools)
-	callTool(t, s, personaRegisterTool, map[string]any{"persona_name": "scribe", "display_name": "Scribe"})
 	res := callTool(t, s, personaSendTool, map[string]any{"persona_name": "scribe", "content": "x", "channel_id": "#general"})
-	if !res.IsError || !strings.Contains(resultText(t, res), "blocked") {
-		t.Fatalf("blocked channel: %s", resultText(t, res))
+	if !res.IsError || !strings.Contains(resultText(t, res), "read-only") {
+		t.Fatalf("read-only send: %s", resultText(t, res))
 	}
 	if len(mock.MutatingCalls()) != 0 {
-		t.Fatal("mutating call to blocked channel")
+		t.Fatal("mutating call under read-only")
 	}
 }

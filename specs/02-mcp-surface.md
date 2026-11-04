@@ -21,7 +21,7 @@ Legend: **R** read-only · **W** write · **D** destructive · **DR** supports `
 | # | Tool | Kind | Parameters (required in **bold**) | Behaviour / Service call |
 | :-- | :--- | :-- | :--- | :--- |
 | 1 | `discord_login` | W | `token`, `profile` (at least one required) | `Login`. Switches the active profile. If `token` is omitted and `profile` names a configured profile, use its `token_env`. Never echo the token. Returns `SessionInfo`. |
-| 2 | `discord_list_servers` | R | — | `ListGuilds`. Name, ID, member count, owner. Filtered by guild allow/block lists. |
+| 2 | `discord_list_servers` | R | — | `ListGuilds`. Name, ID, member count, owner. |
 | 3 | `discord_get_server_info` | R | **`guild_id`** | `GetGuildInfo`. Metadata, channels, roles, boost tier, features. |
 | 4 | `discord_send` | W | **`channel_id`**, **`content`**, `embed` (object), `file_path`, `reply_to_message_id` | `SendMessage`. Works in threads. `file_path` must be absolute, a regular file, and ≤ 25 MiB. Content must be ≤ 2000 chars (validate before calling). |
 | 5 | `discord_read_messages` | R | **`channel_id`**, `limit` (1–100, default 50), `before`, `after`, `around` | `ReadMessages`. At most one of `before`/`after`/`around`. Mentions resolved to names. Opportunistically upserts the results into the index. |
@@ -118,7 +118,7 @@ All `<@id>`, `<@&id>`, and `<#id>` mentions resolve to `@name`, `@role`, and `#c
 Enable with `server.WithResourceCapabilities(true /*subscribe*/, true /*listChanged*/)`. On a Gateway `MessageCreate` in a channel with an active subscription to its transcript URI, send `notifications/resources/updated`. Do the same for `map` on channel, role, or thread create/update/delete. Debounce to ≤ 1 notification per URI per 2 s. Implemented by `internal/mcp/subscriptions.go` (`Notifier`); notifications go only to sessions subscribed to that URI, including URIs with query strings.
 
 ### Webhook policy scope
-`discord_edit_webhook`, `discord_delete_webhook`, and `discord_send_webhook_message` (by `webhook_id`) resolve the webhook's channel with `GetWebhook` and check policy against that channel and guild. A move is also checked against the destination channel. Read-only mode is checked first, before any lookup. A `webhook_url` send whose webhook the bot cannot inspect is refused when guild or channel allowlists are configured.
+`discord_edit_webhook`, `discord_delete_webhook`, and `discord_send_webhook_message` (by `webhook_id`) resolve the webhook's channel with `GetWebhook` and check policy against that channel and guild. A move is also checked against the destination channel. Read-only mode is checked first, before any lookup. There are no guild or channel allow/block lists (removed by owner decision); every guild and channel the bot can reach is in scope.
 
 ## 5. Prompts (`prompts/prompts.go`)
 Register with `mcp.NewPrompt(name, mcp.WithPromptDescription(...), mcp.WithArgument(...))`.
@@ -134,7 +134,7 @@ For each tool:
 - Schema test: the name, required params, and enums exist.
 - Happy path against `MockClient`.
 - Reference resolution (`#general` → `100000000000000010`).
-- Policy denial (read-only, blocked guild).
+- Policy denial (read-only mode).
 - For **DR** tools, `dry_run: true` produces zero mutating `MockClient.Calls`.
 
 `server_test.go` (Wave 3) asserts that `tools/list` returns exactly the 37 names above plus the 7 from spec 05.

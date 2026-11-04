@@ -55,7 +55,7 @@ flowchart LR
 | Entrypoint | `cmd/discord-mcp` | Flags/env config, logging (`slog` JSON → stderr), transport startup |
 | Config | `internal/config` | flag > env > config file > default; multi-profile tokens via `token_env` |
 | MCP | `internal/mcp` | Tool, resource-template, and prompt registration (`mcp-go`) |
-| Policy | `internal/policy` | Read-only, allow/block lists, bulk-delete limits, dry-run previews |
+| Policy | `internal/policy` | Read-only, bulk-delete limits, dry-run previews |
 | Discord | `internal/discord` | `Service` interface, `discordgo` client, resolver, rate-limit telemetry, HITL broker, mock client |
 | Index | `internal/index` | FTS5 message store, channel coverage, personas, persona webhooks |
 | DTOs | `internal/dto` | Token-compacted response types (snake_case, `omitempty`, string Snowflakes) |
@@ -65,9 +65,8 @@ flowchart LR
 1. The client sends `tools/call` (JSON-RPC) over stdio or HTTP.
 2. The tool handler validates parameters and resolves references
    (`#general`, `@alice`, `<#id>`, bare names) to Snowflakes via the resolver.
-3. `Guard.Check(op)` evaluates rules in order: read-only → guild blocklist →
-   guild allowlist → channel block/allowlist (threads also checked against the
-   parent) → bulk limits → unresolvable scope. The first denial wins and is
+3. `Guard.Check(op)` evaluates rules in order: read-only → bulk limits →
+   unresolvable scope. The first denial wins and is
    returned as a tool error (not a Go error).
 4. If `dry_run: true`, the handler fetches cheap current state and returns a
    `DryRunPreview` — **zero mutating calls**.
@@ -154,7 +153,7 @@ channel, role, or thread changes for maps) trigger
 - **Stdout discipline.** stdout carries JSON-RPC frames only; all logs are
   structured JSON on stderr. `golangci-lint` (`forbidigo`) forbids
   `fmt.Print*` and `os.Stdout` outside `main.go`.
-- **Least privilege.** `--read-only`, guild/channel allowlists and blocklists,
+- **Least privilege.** `--read-only`,
   and `dry_run` previews bound what a model can do; policy is enforced
   server-side before any API call. Dry runs are allowed even in read-only mode.
 - **HTTP transport** binds `127.0.0.1:8080` by default with no built-in auth;

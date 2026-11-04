@@ -34,8 +34,7 @@ webhook URLs in a report — use placeholders such as `YOUR_BOT_TOKEN`.
 - **HTTP transport.** `--transport http` binds `127.0.0.1:8080` by default and
   has no built-in authentication. If you expose it beyond loopback, put it
   behind an authenticating reverse proxy or a private network.
-- **Defence in depth.** Use `--read-only`, guild/channel allowlists and
-  blocklists, and `dry_run: true` previews to bound what an LLM can do. Policy
+- **Defence in depth.** Use `--read-only` and `dry_run: true` previews to bound what an LLM can do. Policy
   denials are enforced server-side before any Discord API call.
 - **Logs.** Structured logs go to stderr only; stdout carries JSON-RPC frames.
 - **Hooks.** The Claude plugin's notification hook posts only to

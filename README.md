@@ -20,9 +20,8 @@ tools, for **44 tools** in total.
   profiles (`--config`) to switch bot identities.
 - **Full MCP surface** — Tools, `discord://` Resources with live subscriptions,
   and Prompts; compact DTOs; `#channel` / `@user` names resolve to Snowflakes.
-- **Governance & dry-run policy engine** — `--read-only`, guild/channel
-  allowlists and blocklists, rate-limit telemetry, and `dry_run: true` previews
-  for every destructive operation.
+- **Governance & dry-run policy engine** — `--read-only`, rate-limit
+  telemetry, and `dry_run: true` previews for every destructive operation.
 
 ## Discord setup
 
@@ -140,10 +139,6 @@ Precedence: **flag > env > config file > default**. See [.env.example](.env.exam
 | `--http-addr` | `DISCORD_MCP_HTTP_ADDR` | `127.0.0.1:8080` | Loopback by default; endpoint `/mcp` |
 | `--db-path` | `DISCORD_MCP_DB_PATH` | `:memory:` | e.g. `~/.config/discord-mcp/index.db` |
 | `--read-only` | `DISCORD_MCP_READ_ONLY` | `false` | Blocks write and destructive tools |
-| `--allowed-guilds` | `DISCORD_MCP_ALLOWED_GUILDS` | empty (all) | Comma-separated Snowflakes |
-| `--blocked-guilds` | `DISCORD_MCP_BLOCKED_GUILDS` | empty | |
-| `--allowed-channels` | `DISCORD_MCP_ALLOWED_CHANNELS` | empty (all) | |
-| `--blocked-channels` | `DISCORD_MCP_BLOCKED_CHANNELS` | empty | |
 | `--default-guild` | `DISCORD_MCP_DEFAULT_GUILD_ID` | — | Used when a tool omits `guild_id` |
 | `--log-level` | `DISCORD_MCP_LOG_LEVEL` | `info` | Logs go to stderr only |
 | `--version` | — | — | Prints version, commit, and build date |
@@ -154,15 +149,13 @@ Precedence: **flag > env > config file > default**. See [.env.example](.env.exam
 Profiles file — tokens are referenced by env var name, never inline:
 
 ```json
-{ "profiles": { "ops": { "token_env": "DISCORD_OPS_TOKEN", "allowed_guilds": ["100000000000000001"], "read_only": false } } }
+{ "profiles": { "ops": { "token_env": "DISCORD_OPS_TOKEN", "default_guild_id": "100000000000000001", "read_only": false } } }
 ```
 
 ### Safety features
 
 - **`--read-only`** blocks every write and destructive tool; dry runs still
   work so Claude can plan.
-- **Allowlists / blocklists** for guilds and channels (threads are checked
-  against their parent channel).
 - **`dry_run: true`** on destructive tools returns a `DryRunPreview` (what would
   change, warnings) with zero mutating API calls.
 - Bulk deletes are limited to 2–100 messages younger than 14 days.

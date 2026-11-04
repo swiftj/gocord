@@ -175,12 +175,6 @@ func TestFetchMediaDefaultsAndValidation(t *testing.T) {
 		}
 	}
 
-	blocked, _ := mtSetup(t, &config.Config{BlockedChannels: []string{discord.MockGeneralID}}, nil)
-	bs := newTestServer(t, blocked, RegisterMediaTools)
-	res := callTool(t, bs, mediaToolFetch, map[string]any{"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "attachment_index": 0})
-	if !res.IsError || !strings.Contains(resultText(t, res), "policy") {
-		t.Fatalf("blocked channel must be denied: %s", resultText(t, res))
-	}
 }
 
 func TestGetMemberAvatar(t *testing.T) {

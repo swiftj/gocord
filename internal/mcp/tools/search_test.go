@@ -219,27 +219,6 @@ func TestSearchPolicy(t *testing.T) {
 		t.Fatalf("read-only must still allow search: %+v", out)
 	}
 
-	d2, mock := newTestDeps(t, &config.Config{BlockedGuilds: []string{discord.MockGuildID}})
-	s2 := newTestServer(t, d2, RegisterSearchTools)
-	res := callTool(t, s2, searchToolName, map[string]any{"guild_id": discord.MockGuildID, "query": "release"})
-	if !res.IsError || !strings.Contains(resultText(t, res), "blocked") {
-		t.Fatalf("blocked guild: %s", resultText(t, res))
-	}
-	if len(mock.CallsTo("ReadMessages")) != 0 {
-		t.Fatal("blocked guild was backfilled")
-	}
-
-	d3, mock3 := newTestDeps(t, &config.Config{BlockedChannels: []string{discord.MockGeneralID}})
-	s3 := newTestServer(t, d3, RegisterSearchTools)
-	out := searchCall(t, s3, map[string]any{"guild_id": discord.MockGuildID, "query": "release OR search"})
-	if out.Count != 1 || out.Items[0].ChannelID != discord.MockForumThreadID {
-		t.Fatalf("blocked channel leaked: %+v", out)
-	}
-	for _, c := range mock3.CallsTo("ReadMessages") {
-		if c.Args[0].(dto.ReadMessagesReq).ChannelID == discord.MockGeneralID {
-			t.Fatal("blocked channel was backfilled")
-		}
-	}
 }
 
 func TestSearchValidation(t *testing.T) {

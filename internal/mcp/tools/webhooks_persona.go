@@ -208,12 +208,6 @@ func webhookChannel(ctx context.Context, d deps.Deps, webhookID string) (*dto.Ch
 	return d.Discord.GetChannel(ctx, w.ChannelID)
 }
 
-// webhookAllowlisted reports whether guild or channel allowlists are configured;
-// sends to webhooks whose scope cannot be determined are then refused.
-func webhookAllowlisted(d deps.Deps) bool {
-	return d.Config != nil && (len(d.Config.AllowedGuilds) > 0 || len(d.Config.AllowedChannels) > 0)
-}
-
 // ---------- webhook CRUD ----------
 
 func webhookCreate(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp.CallToolResult {
@@ -302,9 +296,6 @@ func webhookSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 			op = channelOp(webhookSendTool, ch, opWrite, false)
 		case wreq.WebhookID != "":
 			return errorResult(err)
-		case webhookAllowlisted(d):
-			// A URL webhook the bot cannot inspect may target any server.
-			return errorf("denied by policy: cannot verify which server this webhook_url posts to while guild/channel allowlists are configured")
 		}
 	}
 	if err := d.Guard.Check(op); err != nil {

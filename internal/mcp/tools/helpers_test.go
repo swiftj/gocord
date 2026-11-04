@@ -19,7 +19,7 @@ import (
 )
 
 // newTestDeps returns Deps backed by a fresh MockClient and an in-memory store.
-// Pass a non-nil cfg to exercise policy (read-only, allowlists).
+// Pass a non-nil cfg to exercise policy (read-only).
 func newTestDeps(t *testing.T, cfg *config.Config) (deps.Deps, *discord.MockClient) {
 	t.Helper()
 	if cfg == nil {

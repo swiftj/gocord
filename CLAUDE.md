@@ -15,7 +15,7 @@ Zero-dependency Golang Discord MCP server (`stdio` + `Streamable HTTP`) with emb
 ## 2. Public Repository & Security Rules
 - **Zero Secrets in Git:** Never commit tokens, webhook URLs, real Guild/User Snowflakes, `.env` files, or `.db` files. Use synthetic Snowflakes (`"100000000000000001"`) in all tests and docs.
 - **Reproducible Builds:** Always build with `CGO_ENABLED=0 -trimpath -ldflags="-s -w"`.
-- **Safe Defaults:** Server starts with `--db-path :memory:` by default and respects `--read-only`, `--allowed-guilds`, and `dry_run: true` on destructive tools.
+- **Safe Defaults:** Server starts with `--db-path :memory:` by default and respects `--read-only` and `dry_run: true` on destructive tools. There are no allow/block lists of any kind (guild, channel, or media host).
 
 ## 3. Essential Commands
 - **Build Local Binary:** `make build` (`CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/discord-mcp ./cmd/discord-mcp`)

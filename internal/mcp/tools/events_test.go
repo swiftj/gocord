@@ -112,13 +112,7 @@ func TestManageEventsPolicy(t *testing.T) {
 	if !res.IsError || !strings.Contains(resultText(t, res), "read-only") {
 		t.Fatalf("create under read-only: %s", resultText(t, res))
 	}
-
-	d2, mock2 := newTestDeps(t, &config.Config{BlockedGuilds: []string{discord.MockGuildID}})
-	s2 := newTestServer(t, d2, RegisterEventTools)
-	if res := callTool(t, s2, eventsTool, map[string]any{"action": "list", "guild_id": discord.MockGuildID}); !res.IsError {
-		t.Fatal("blocked guild list must be denied")
-	}
-	if len(mock.MutatingCalls())+len(mock2.MutatingCalls()) != 0 {
+	if len(mock.MutatingCalls()) != 0 {
 		t.Fatal("denied calls mutated")
 	}
 }

@@ -42,7 +42,7 @@
 │   ├── dto/
 │   │   └── models.go                   # Token-compacted structs for MCP tool/resource responses
 │   ├── policy/
-│   │   ├── guard.go                    # Read-only, guild/channel allowlist, dry-run diff evaluator
+│   │   ├── guard.go                    # Read-only, bulk limits, dry-run diff evaluator
 │   │   └── guard_test.go
 │   ├── discord/
 │   │   ├── interface.go                # discord.Service interface (Wave 1 contract for all tools)
@@ -166,7 +166,7 @@ type Service interface {
 ```
 
 ### Interface notes
-- `GetChannel` was added during Wave 1. Channel-only tools need it to find the channel's guild (for allowlist checks) and a thread's parent, and to fetch the current state that dry-run previews compare against.
+- `GetChannel` was added during Wave 1. Channel-only tools need it to find the channel's guild (for policy checks) and a thread's parent, and to fetch the current state that dry-run previews compare against.
 - `GetWebhook` was added in Wave 3 so webhook tools scope policy checks to the webhook's real channel and guild, not just the default guild.
 - Optional interface (not on `Service`): `BotUserID() string`, implemented by `*Client` and `*MockClient`. `discord_manage_roles` uses it to refuse edits to roles at or above the bot's highest role. The mock fixture gives the bot a managed role `MCP Bot` (`100000000000000041`, position 10).
 - `ParseRef` and `NameMatches` in `internal/discord/ref.go` are the single parser for `#name`, `@name`, `<#id>`, `<@id>`, `<@!id>`, `<@&id>`, and raw IDs. `resolver.go` MUST use them.
@@ -240,10 +240,6 @@ Every DTO is optimised for LLM token cost:
 | `--http-addr` | `DISCORD_MCP_HTTP_ADDR` | `127.0.0.1:8080` | Loopback by default |
 | `--db-path` | `DISCORD_MCP_DB_PATH` | `:memory:` | e.g. `~/.config/discord-mcp/index.db` (expand `~`) |
 | `--read-only` | `DISCORD_MCP_READ_ONLY` | `false` | |
-| `--allowed-guilds` | `DISCORD_MCP_ALLOWED_GUILDS` | empty (all) | Comma-separated Snowflakes |
-| `--blocked-guilds` | `DISCORD_MCP_BLOCKED_GUILDS` | empty | |
-| `--allowed-channels` | `DISCORD_MCP_ALLOWED_CHANNELS` | empty (all) | |
-| `--blocked-channels` | `DISCORD_MCP_BLOCKED_CHANNELS` | empty | |
 | `--default-guild` | `DISCORD_MCP_DEFAULT_GUILD_ID` | — | Used when a tool omits `guild_id` |
 | `--log-level` | `DISCORD_MCP_LOG_LEVEL` | `info` | |
 | `--version` | — | — | Prints the ldflags-injected `version`, `commit`, `date` |
@@ -252,7 +248,7 @@ Precedence: **flag > env > config file > default**.
 
 Profiles file format:
 ```json
-{ "profiles": { "ops": { "token_env": "DISCORD_OPS_TOKEN", "allowed_guilds": ["100000000000000001"], "read_only": false } } }
+{ "profiles": { "ops": { "token_env": "DISCORD_OPS_TOKEN", "default_guild_id": "100000000000000001", "read_only": false } } }
 ```
 Profiles reference tokens through `token_env` (the name of an env var), never inline. `config.Load()` rejects a profile file containing a literal `"token"` key.
 
@@ -275,17 +271,12 @@ func New(cfg *config.Config) *Guard
 func (g *Guard) Check(op Op) error // nil or *DeniedError (wraps ErrDenied)
 func (g *Guard) Preview(op Op, target string, changes []string, warnings ...string) dto.DryRunPreview
 func (g *Guard) IsDestructive(toolOrToolAction string) bool // e.g. "discord_manage_roles:delete"
-func (g *Guard) GuildAllowed(guildID string) bool          // for filtering list outputs
-func (g *Guard) ChannelAllowed(channelID string) bool
 ```
 
 ### Rules, evaluated in order. The first denial wins.
 1. **Read-only:** If `ReadOnly` and `(op.Write || op.Destructive) && !op.DryRun`, deny with `"read-only mode: <tool> is disabled"`. Dry runs are always allowed so Claude can still plan.
-2. **Guild blocklist:** If `GuildID` is in `BlockedGuilds`, deny.
-3. **Guild allowlist:** If `AllowedGuilds` is non-empty and `GuildID` is non-empty and not in it, deny.
-4. **Channel blocklist / allowlist:** Same as rules 2–3 for `ChannelID`. A thread is evaluated against its parent channel as well (the caller passes the parent ID if known).
-5. **Bulk limits:** `discord_bulk_delete_messages` requires 2–100 IDs, all younger than 14 days (Snowflake timestamp check). Otherwise deny with a precise reason.
-6. **Unresolvable scope:** If a destructive op has neither a guild ID nor a channel ID, deny.
+2. **Bulk limits:** `discord_bulk_delete_messages` requires 2–100 IDs, all younger than 14 days (Snowflake timestamp check). Otherwise deny with a precise reason.
+3. **Unresolvable scope:** If a destructive op has neither a guild ID nor a channel ID, deny.
 
 ### Destructive tool set
 `discord_delete_message`, `discord_bulk_delete_messages`, `discord_delete_channel`, `discord_edit_channel`, `discord_set_channel_permissions`, `discord_manage_roles` (all actions except `list`), `discord_delete_webhook`, `discord_edit_webhook`, `discord_governance_audit` (`timeout_member`), `discord_manage_threads` (`archive`/`lock`).

@@ -132,13 +132,6 @@ func TestChannelDigestRenders(t *testing.T) {
 	}
 }
 
-func TestChannelDigestPolicy(t *testing.T) {
-	s, _ := testServer(t, &config.Config{BlockedChannels: []string{discord.MockGeneralID}})
-	if _, err := getPrompt(t, s, ChannelDigest, map[string]string{"channel_id": "#general"}); err == nil {
-		t.Fatal("blocked channel must not be digested")
-	}
-}
-
 func TestServerBlueprintRenders(t *testing.T) {
 	s, mock := testServer(t, &config.Config{ReadOnly: true})
 	r, err := getPrompt(t, s, ServerBlueprint, map[string]string{"guild_id": "Test Guild", "goal": "open-source project with support forum"})

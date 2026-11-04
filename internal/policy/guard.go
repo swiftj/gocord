@@ -1,12 +1,11 @@
-// Package policy implements the governance guard: read-only mode, guild and
-// channel allow/block lists, bulk-delete limits, and dry-run previews.
+// Package policy implements the governance guard: read-only mode, bulk-delete
+// limits, and dry-run previews.
 // See specs/01-architecture-and-contracts.md §7.
 package policy
 
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/local/discord-mcp/internal/config"
@@ -70,12 +69,8 @@ var DestructiveTools = map[string]bool{
 
 // Guard evaluates operations against configured policy.
 type Guard struct {
-	readOnly        bool
-	allowedGuilds   []string
-	blockedGuilds   []string
-	allowedChannels []string
-	blockedChannels []string
-	now             func() time.Time
+	readOnly bool
+	now      func() time.Time
 }
 
 // New builds a Guard from configuration. A nil cfg yields a permissive guard.
@@ -83,10 +78,6 @@ func New(cfg *config.Config) *Guard {
 	g := &Guard{now: time.Now}
 	if cfg != nil {
 		g.readOnly = cfg.ReadOnly
-		g.allowedGuilds = cfg.AllowedGuilds
-		g.blockedGuilds = cfg.BlockedGuilds
-		g.allowedChannels = cfg.AllowedChannels
-		g.blockedChannels = cfg.BlockedChannels
 	}
 	return g
 }
@@ -100,16 +91,6 @@ func (g *Guard) ReadOnly() bool { return g.readOnly }
 // IsDestructive reports whether tool (or "tool:action") is in the destructive set.
 func (g *Guard) IsDestructive(tool string) bool { return DestructiveTools[tool] }
 
-// GuildAllowed reports whether a guild passes the allow/block lists (for filtering lists).
-func (g *Guard) GuildAllowed(guildID string) bool {
-	return g.listCheck(guildID, g.allowedGuilds, g.blockedGuilds) == ""
-}
-
-// ChannelAllowed reports whether a channel passes the allow/block lists.
-func (g *Guard) ChannelAllowed(channelID string) bool {
-	return g.listCheck(channelID, g.allowedChannels, g.blockedChannels) == ""
-}
-
 // Check evaluates op. It returns nil or a *DeniedError. The first denial wins.
 func (g *Guard) Check(op Op) error {
 	deny := func(format string, a ...any) error {
@@ -121,27 +102,7 @@ func (g *Guard) Check(op Op) error {
 	if g.readOnly && mutating && !op.DryRun {
 		return deny("read-only mode: %s is disabled", op.Tool)
 	}
-	// 2–3. Guild lists.
-	if op.GuildID != "" {
-		if r := g.listCheck(op.GuildID, g.allowedGuilds, g.blockedGuilds); r != "" {
-			return deny("guild %s is %s", op.GuildID, r)
-		}
-	}
-	// 4. Channel lists (thread checked together with its parent).
-	for _, ch := range []string{op.ChannelID, op.ParentChannelID} {
-		if ch == "" {
-			continue
-		}
-		if slices.Contains(g.blockedChannels, ch) {
-			return deny("channel %s is blocked", ch)
-		}
-	}
-	if len(g.allowedChannels) > 0 && op.ChannelID != "" &&
-		!slices.Contains(g.allowedChannels, op.ChannelID) &&
-		(op.ParentChannelID == "" || !slices.Contains(g.allowedChannels, op.ParentChannelID)) {
-		return deny("channel %s is not in the allowlist", op.ChannelID)
-	}
-	// 5. Bulk delete limits.
+	// 2. Bulk delete limits.
 	if op.Tool == "discord_bulk_delete_messages" {
 		n := len(op.MessageIDs)
 		if n < BulkDeleteMin || n > BulkDeleteMax {
@@ -158,7 +119,7 @@ func (g *Guard) Check(op Op) error {
 			}
 		}
 	}
-	// 6. Unresolvable scope.
+	// 3. Unresolvable scope.
 	if op.Destructive && op.GuildID == "" && op.ChannelID == "" {
 		return deny("destructive operation has no guild or channel scope")
 	}
@@ -189,14 +150,4 @@ func (g *Guard) Preview(op Op, target string, changes []string, warnings ...stri
 		}
 	}
 	return p
-}
-
-func (g *Guard) listCheck(id string, allowed, blocked []string) string {
-	if slices.Contains(blocked, id) {
-		return "blocked"
-	}
-	if len(allowed) > 0 && !slices.Contains(allowed, id) {
-		return "not in the allowlist"
-	}
-	return ""
 }

@@ -23,33 +23,25 @@ const (
 
 // Profile is a named bot identity. Tokens are referenced by env var name only.
 type Profile struct {
-	TokenEnv        string   `json:"token_env"`
-	AllowedGuilds   []string `json:"allowed_guilds,omitempty"`
-	BlockedGuilds   []string `json:"blocked_guilds,omitempty"`
-	AllowedChannels []string `json:"allowed_channels,omitempty"`
-	BlockedChannels []string `json:"blocked_channels,omitempty"`
-	ReadOnly        *bool    `json:"read_only,omitempty"`
-	DefaultGuildID  string   `json:"default_guild_id,omitempty"`
+	TokenEnv       string `json:"token_env"`
+	ReadOnly       *bool  `json:"read_only,omitempty"`
+	DefaultGuildID string `json:"default_guild_id,omitempty"`
 }
 
 // Config is the fully resolved runtime configuration.
 type Config struct {
-	Token           string `json:"-"` // never serialised or logged
-	ConfigPath      string
-	Profile         string
-	Profiles        map[string]Profile
-	Transport       string
-	HTTPAddr        string
-	DBPath          string
-	ReadOnly        bool
-	AllowedGuilds   []string
-	BlockedGuilds   []string
-	AllowedChannels []string
-	BlockedChannels []string
-	DefaultGuildID  string
-	LogLevel        string
-	ShowVersion     bool
-	ListToolsJSON   bool // hidden: print tool list as JSON (used by build-dxt.sh)
+	Token          string `json:"-"` // never serialised or logged
+	ConfigPath     string
+	Profile        string
+	Profiles       map[string]Profile
+	Transport      string
+	HTTPAddr       string
+	DBPath         string
+	ReadOnly       bool
+	DefaultGuildID string
+	LogLevel       string
+	ShowVersion    bool
+	ListToolsJSON  bool // hidden: print tool list as JSON (used by build-dxt.sh)
 
 	// Media (env only): the download cap in bytes (0 = default).
 	MediaMaxBytes int64
@@ -83,8 +75,7 @@ func Load(args []string, getenv func(string) string) (*Config, error) {
 
 	var (
 		token, cfgPath, profile, transport, httpAddr, dbPath string
-		allowedG, blockedG, allowedC, blockedC, defGuild     string
-		logLevel                                             string
+		defGuild, logLevel                                   string
 		readOnly                                             bool
 		c                                                    Config
 	)
@@ -95,10 +86,6 @@ func Load(args []string, getenv func(string) string) (*Config, error) {
 	fs.StringVar(&httpAddr, "http-addr", "", "HTTP listen address")
 	fs.StringVar(&dbPath, "db-path", "", "index DB path or :memory:")
 	fs.BoolVar(&readOnly, "read-only", false, "block write and destructive tools")
-	fs.StringVar(&allowedG, "allowed-guilds", "", "comma-separated guild IDs")
-	fs.StringVar(&blockedG, "blocked-guilds", "", "comma-separated guild IDs")
-	fs.StringVar(&allowedC, "allowed-channels", "", "comma-separated channel IDs")
-	fs.StringVar(&blockedC, "blocked-channels", "", "comma-separated channel IDs")
 	fs.StringVar(&defGuild, "default-guild", "", "default guild ID")
 	fs.StringVar(&logLevel, "log-level", "", "debug|info|warn|error")
 	fs.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
@@ -161,19 +148,6 @@ func Load(args []string, getenv func(string) string) (*Config, error) {
 		c.ReadOnly = *p.ReadOnly
 	}
 
-	list := func(flagName, flagVal, envName string, fromProfile []string) []string {
-		if set[flagName] {
-			return splitList(flagVal)
-		}
-		if v := getenv(envName); v != "" {
-			return splitList(v)
-		}
-		return fromProfile
-	}
-	c.AllowedGuilds = list("allowed-guilds", allowedG, "DISCORD_MCP_ALLOWED_GUILDS", p.AllowedGuilds)
-	c.BlockedGuilds = list("blocked-guilds", blockedG, "DISCORD_MCP_BLOCKED_GUILDS", p.BlockedGuilds)
-	c.AllowedChannels = list("allowed-channels", allowedC, "DISCORD_MCP_ALLOWED_CHANNELS", p.AllowedChannels)
-	c.BlockedChannels = list("blocked-channels", blockedC, "DISCORD_MCP_BLOCKED_CHANNELS", p.BlockedChannels)
 	c.DefaultGuildID = pick("default-guild", defGuild, "DISCORD_MCP_DEFAULT_GUILD_ID", p.DefaultGuildID)
 
 	// A host that leaves an optional "${user_config.x}" unsubstituted means unset.
@@ -250,16 +224,6 @@ func loadProfiles(path string) (map[string]Profile, error) {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	return parsed.Profiles, nil
-}
-
-func splitList(s string) []string {
-	var out []string
-	for _, part := range strings.Split(s, ",") {
-		if p := strings.TrimSpace(part); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 func expandHome(p string, getenv func(string) string) string {

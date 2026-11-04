@@ -4,7 +4,7 @@
   "display_name": "Discord",
   "version": "0.1.0",
   "description": "Discord MCP server with FTS5 search, HITL approvals, and multi-persona webhooks.",
-  "long_description": "A static, CGO-free Go MCP server for Discord: 44 tools, discord:// resources with live subscriptions, prompts, an embedded SQLite FTS5 search index, human-in-the-loop buttons/selects/modals, multi-persona webhooks, and a governance policy engine with read-only mode, allowlists, and dry-run previews.",
+  "long_description": "A static, CGO-free Go MCP server for Discord: 44 tools, discord:// resources with live subscriptions, prompts, an embedded SQLite FTS5 search index, human-in-the-loop buttons/selects/modals, multi-persona webhooks, and a governance policy engine with read-only mode and dry-run previews.",
   "author": { "name": "discord-mcp contributors" },
   "license": "MIT",
   "keywords": ["discord", "mcp", "community", "moderation", "hitl"],

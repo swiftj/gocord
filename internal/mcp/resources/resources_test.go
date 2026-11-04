@@ -112,16 +112,8 @@ func TestGuildMapByNameAndPolicy(t *testing.T) {
 	if errMsg != "" || !strings.HasPrefix(text, "# Test Guild (100000000000000001)") {
 		t.Fatalf("by name: %q %q", text, errMsg)
 	}
-
-	d2, _ := newDeps(t, &config.Config{BlockedGuilds: []string{discord.MockGuildID}})
-	if _, _, errMsg := readURI(t, newServer(d2), "discord://guilds/"+discord.MockGuildID+"/map"); !strings.Contains(errMsg, "blocked") {
-		t.Fatalf("blocked guild not denied: %q", errMsg)
-	}
-
-	d3, _ := newDeps(t, &config.Config{BlockedChannels: []string{discord.MockForumID}})
-	text, _, _ = readURI(t, newServer(d3), "discord://guilds/"+discord.MockGuildID+"/map")
-	if strings.Contains(text, "help-forum") {
-		t.Fatalf("blocked channel listed:\n%s", text)
+	if !strings.Contains(text, "help-forum") {
+		t.Fatalf("every channel should be listed:\n%s", text)
 	}
 }
 
@@ -204,14 +196,6 @@ func TestTranscriptPaging(t *testing.T) {
 	}
 }
 
-func TestTranscriptPolicy(t *testing.T) {
-	d, _ := newDeps(t, &config.Config{BlockedChannels: []string{discord.MockForumID}})
-	// A thread inherits its parent's block.
-	if _, _, errMsg := readURI(t, newServer(d), "discord://channels/"+discord.MockForumThreadID+"/transcript"); !strings.Contains(errMsg, "blocked") {
-		t.Fatalf("thread of blocked forum not denied: %q", errMsg)
-	}
-}
-
 func TestGuildsResource(t *testing.T) {
 	d, _ := newDeps(t, nil)
 	text, mime, errMsg := readURI(t, newServer(d), "discord://guilds")
@@ -221,11 +205,6 @@ func TestGuildsResource(t *testing.T) {
 	var gs []dto.GuildSummary
 	if err := json.Unmarshal([]byte(text), &gs); err != nil || len(gs) != 1 || gs[0].ID != discord.MockGuildID {
 		t.Fatalf("guilds = %s", text)
-	}
-	d2, _ := newDeps(t, &config.Config{AllowedGuilds: []string{"100000000000000009"}})
-	text, _, _ = readURI(t, newServer(d2), "discord://guilds")
-	if text != "[]" {
-		t.Fatalf("allowlist not applied: %s", text)
 	}
 }
 

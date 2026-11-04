@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/local/discord-mcp/internal/config"
 	"github.com/local/discord-mcp/internal/discord"
 	"github.com/local/discord-mcp/internal/dto"
 )
@@ -63,12 +62,6 @@ func TestListTuppers(t *testing.T) {
 		t.Fatal("bad since must fail")
 	}
 
-	blocked, _ := newTestDeps(t, &config.Config{BlockedChannels: []string{discord.MockGeneralID}})
-	bs := newTestServer(t, blocked, RegisterTupperAccessTools)
-	res := callTool(t, bs, tupToolList, map[string]any{"channel_id": discord.MockGeneralID})
-	if !res.IsError {
-		t.Fatal("blocked channel must be denied")
-	}
 }
 
 func TestCheckAccess(t *testing.T) {

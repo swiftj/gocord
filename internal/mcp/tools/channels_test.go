@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/local/discord-mcp/internal/config"
 	"github.com/local/discord-mcp/internal/discord"
 	"github.com/local/discord-mcp/internal/dto"
 	"github.com/local/discord-mcp/internal/mcp/deps"
@@ -144,14 +143,6 @@ func TestPermsParamSchemaAcceptsArrayOrString(t *testing.T) {
 	b, _ := json.Marshal(s.GetTool("discord_set_channel_permissions").Tool.InputSchema.Properties["allow_permissions"])
 	if !strings.Contains(string(b), `"type":["array","string"]`) {
 		t.Fatalf("schema = %s", b)
-	}
-}
-
-func TestChannelAllowlistDenies(t *testing.T) {
-	s, m, _ := blSetup(t, &config.Config{AllowedChannels: []string{discord.MockAnnouncementID}})
-	blWantErr(t, callTool(t, s, "discord_delete_channel", map[string]any{"channel_id": "#general"}), "not in the allowlist")
-	if len(m.MutatingCalls()) != 0 {
-		t.Fatal("unexpected mutation")
 	}
 }
 

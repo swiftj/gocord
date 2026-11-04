@@ -37,7 +37,7 @@ const (
 // Register registers discord:// resources and resource templates.
 func Register(s *server.MCPServer, d deps.Deps) {
 	s.AddResource(mcp.NewResource(GuildsURI, "Discord guilds",
-		mcp.WithResourceDescription("JSON list of guilds the bot belongs to (allow/block lists applied)."),
+		mcp.WithResourceDescription("JSON list of guilds the bot belongs to."),
 		mcp.WithMIMEType("application/json"),
 	), func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 		return ReadGuilds(ctx, d, req.Params.URI)
@@ -85,13 +85,10 @@ func ReadGuilds(ctx context.Context, d deps.Deps, uri string) ([]mcp.ResourceCon
 	if err != nil {
 		return nil, fmt.Errorf("list guilds: %w", err)
 	}
-	out := make([]dto.GuildSummary, 0, len(gs))
-	for _, g := range gs {
-		if d.Guard.GuildAllowed(g.ID) {
-			out = append(out, g)
-		}
+	if gs == nil {
+		gs = []dto.GuildSummary{}
 	}
-	b, err := json.Marshal(out)
+	b, err := json.Marshal(gs)
 	if err != nil {
 		return nil, fmt.Errorf("marshal guilds: %w", err)
 	}
@@ -160,7 +157,7 @@ func RenderGuildMap(ctx context.Context, d deps.Deps, guildID string) (string, e
 		}
 	}
 	for _, c := range g.Channels {
-		if c.Type == dto.ChannelThread || !d.Guard.ChannelAllowed(c.ID) {
+		if c.Type == dto.ChannelThread {
 			continue
 		}
 		switch {
@@ -506,7 +503,7 @@ func (r *MentionResolver) Resolve(ctx context.Context, s string) string {
 
 // ---------- utils ----------
 
-// policyRead builds a read-only policy op (allow/block lists still apply).
+// policyRead builds a read-only policy op.
 func policyRead(tool, guildID, channelID string, parent ...string) policy.Op {
 	op := policy.Op{Tool: tool, GuildID: guildID, ChannelID: channelID}
 	if len(parent) > 0 {

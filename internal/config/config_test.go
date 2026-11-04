@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -24,10 +23,9 @@ func TestDefaults(t *testing.T) {
 
 func TestPrecedenceFlagOverEnv(t *testing.T) {
 	env := envFrom(map[string]string{
-		"DISCORD_MCP_TRANSPORT":      "http",
-		"DISCORD_MCP_READ_ONLY":      "true",
-		"DISCORD_MCP_ALLOWED_GUILDS": "100000000000000001, 100000000000000002",
-		"DISCORD_BOT_TOKEN":          "env-token",
+		"DISCORD_MCP_TRANSPORT": "http",
+		"DISCORD_MCP_READ_ONLY": "true",
+		"DISCORD_BOT_TOKEN":     "env-token",
 	})
 	c, err := Load([]string{"--transport", "stdio", "--read-only=false"}, env)
 	if err != nil {
@@ -42,10 +40,6 @@ func TestPrecedenceFlagOverEnv(t *testing.T) {
 	if c.Token != "env-token" {
 		t.Error("token should come from env")
 	}
-	want := []string{"100000000000000001", "100000000000000002"}
-	if !reflect.DeepEqual(c.AllowedGuilds, want) {
-		t.Errorf("allowed guilds = %v", c.AllowedGuilds)
-	}
 }
 
 func TestInvalidTransport(t *testing.T) {
@@ -57,14 +51,14 @@ func TestInvalidTransport(t *testing.T) {
 func TestProfilesFile(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.json")
-	if err := os.WriteFile(good, []byte(`{"profiles":{"ops":{"token_env":"OPS_TOKEN","allowed_guilds":["100000000000000001"],"read_only":true}}}`), 0o600); err != nil {
+	if err := os.WriteFile(good, []byte(`{"profiles":{"ops":{"token_env":"OPS_TOKEN","default_guild_id":"100000000000000001","read_only":true}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c, err := Load([]string{"--config", good, "--profile", "ops"}, envFrom(map[string]string{"OPS_TOKEN": "ops-secret"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Token != "ops-secret" || !c.ReadOnly || len(c.AllowedGuilds) != 1 {
+	if c.Token != "ops-secret" || !c.ReadOnly || c.DefaultGuildID != "100000000000000001" {
 		t.Fatalf("profile not applied: %+v", c)
 	}
 	if _, err := c.TokenForProfile("missing", envFrom(nil)); err == nil {

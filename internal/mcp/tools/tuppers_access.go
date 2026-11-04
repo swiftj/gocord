@@ -111,9 +111,8 @@ func tupListHandler(d deps.Deps) server.ToolHandlerFunc {
 		}
 		resp.Tuppers = []dto.TupperInfo{}
 		for _, r := range rows {
-			// With a channel filter only its targets count; guild-wide, Gateway-indexed
-			// channels outside the targets still pass when policy allows them.
-			if !allowed[r.LastSeenChannelID] && (ch != nil || !d.Guard.ChannelAllowed(r.LastSeenChannelID)) {
+			// A category filter is applied here: only its child channels count.
+			if ch != nil && !allowed[r.LastSeenChannelID] {
 				continue
 			}
 			resp.Tuppers = append(resp.Tuppers, r)
@@ -203,9 +202,6 @@ func accCheckHandler(d deps.Deps) server.ToolHandlerFunc {
 
 		resp := accResponse{Channels: []dto.ChannelAccess{}}
 		for _, c := range targets {
-			if !d.Guard.ChannelAllowed(c.ID) {
-				continue
-			}
 			row := a.check(c, byID)
 			if row.CanView && row.CanReadHistory {
 				resp.Summary.Readable++

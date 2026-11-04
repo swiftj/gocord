@@ -115,7 +115,7 @@ func TestAwaitInteractionValidation(t *testing.T) {
 }
 
 func TestAwaitInteractionPolicy(t *testing.T) {
-	for _, cfg := range []*config.Config{{ReadOnly: true}, {BlockedGuilds: []string{discord.MockGuildID}}} {
+	for _, cfg := range []*config.Config{{ReadOnly: true}} {
 		d, mock := newTestDeps(t, cfg)
 		s := newTestServer(t, d, RegisterInteractionTools)
 		res := callTool(t, s, interactionTool, map[string]any{"channel_id": "#general", "prompt_text": "x"})

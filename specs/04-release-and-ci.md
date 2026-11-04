@@ -192,7 +192,7 @@ Lists every variable from spec 01 §6 with placeholder or blank values and a com
 - Supported versions: latest minor.
 - Report privately via GitHub Security Advisories. Do not open public issues.
 - Response target: acknowledge within 72 h.
-- Threat model notes: bot-token handling (env only, never logged), webhook tokens stored only in the local index DB (`0600`), the HTTP transport binds `127.0.0.1` by default and must sit behind auth if exposed, and `--read-only`/allowlists as defence in depth.
+- Threat model notes: bot-token handling (env only, never logged), webhook tokens stored only in the local index DB (`0600`), the HTTP transport binds `127.0.0.1` by default and must sit behind auth if exposed, and `--read-only` as defence in depth.
 - Minimum bot permissions table per feature set.
 
 ### `LICENSE`
@@ -206,7 +206,7 @@ Sections, in order:
 4. **Claude Desktop:** download the platform `.dxt` and double-click it (or Settings → Extensions → Install). Fill in the token in the extension settings.
 5. **Claude Code:** `claude mcp add discord -e DISCORD_BOT_TOKEN=… -- discord-mcp`, or install the plugin from `ecosystem/claude-plugin` (`/plugin marketplace add …` → `/plugin install discord`).
 6. **Claude Cowork:** install the `ecosystem/claude-plugin` plugin. Set `DISCORD_BOT_TOKEN` in the environment.
-7. Configuration table (from spec 01 §6), safety features (`--read-only`, allowlists, `dry_run`).
+7. Configuration table (from spec 01 §6), safety features (`--read-only`, `dry_run`).
 8. Tool overview (44 tools, linking to `docs/TOOL_REFERENCE.md`), resources, prompts.
 9. Development: `make build`, `make test`, `make test-race`, `make smoke`.
 10. License + security links.

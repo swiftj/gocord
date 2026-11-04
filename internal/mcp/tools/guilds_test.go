@@ -151,19 +151,6 @@ func blRunCases(t *testing.T, cases []blCase) {
 				}
 			})
 
-			if !c.noGuild {
-				t.Run("blocked_guild", func(t *testing.T) {
-					s, m, _ := blSetup(t, &config.Config{BlockedGuilds: []string{discord.MockGuildID}})
-					if c.setup != nil {
-						c.setup(m)
-					}
-					blWantErr(t, callTool(t, s, c.tool, c.args), "denied by policy")
-					if len(m.MutatingCalls()) != 0 {
-						t.Errorf("mutating calls for blocked guild: %+v", m.MutatingCalls())
-					}
-				})
-			}
-
 			if c.dryRun {
 				t.Run("dry_run", func(t *testing.T) {
 					s, m, _ := blSetup(t, nil)
@@ -339,19 +326,11 @@ func TestLoginProfileAndErrors(t *testing.T) {
 	}
 }
 
-func TestListServersFiltersBlocked(t *testing.T) {
-	s, _, _ := blSetup(t, &config.Config{BlockedGuilds: []string{discord.MockGuildID}})
-	txt := blWantOK(t, callTool(t, s, "discord_list_servers", nil))
-	if !strings.Contains(txt, `"count":0`) {
-		t.Fatalf("blocked guild not filtered: %s", txt)
-	}
-}
-
-func TestGetServerInfoFiltersBlockedChannels(t *testing.T) {
-	s, _, _ := blSetup(t, &config.Config{BlockedChannels: []string{discord.MockAnnouncementID}})
+func TestGetServerInfoListsAllChannels(t *testing.T) {
+	s, _, _ := blSetup(t, nil)
 	txt := blWantOK(t, callTool(t, s, "discord_get_server_info", map[string]any{"guild_id": discord.MockGuildID}))
-	if strings.Contains(txt, discord.MockAnnouncementID) || !strings.Contains(txt, discord.MockGeneralID) {
-		t.Fatalf("channel filter wrong: %s", txt)
+	if !strings.Contains(txt, discord.MockAnnouncementID) || !strings.Contains(txt, discord.MockGeneralID) {
+		t.Fatalf("channels missing: %s", txt)
 	}
 }
 

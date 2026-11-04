@@ -65,7 +65,7 @@ Warnings:   (copy every warning from the DryRunPreview results)
 ```
 
 If any preview returns `allowed: false`, stop and report `denied_reason`
-(read-only mode, allowlist, etc.). Do not try to work around policy.
+(read-only mode, etc.). Do not try to work around policy.
 
 ### 4. Apply only after approval
 Apply only after the user explicitly confirms in chat. If the user is remote or

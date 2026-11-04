@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local/discord-mcp/internal/config"
 	"github.com/local/discord-mcp/internal/discord"
 	"github.com/local/discord-mcp/internal/media"
 )
@@ -145,15 +144,6 @@ func TestBatchFetchMedia(t *testing.T) {
 		t.Fatal("empty batch must fail")
 	}
 
-	blocked, _ := mtSetup(t, &config.Config{BlockedChannels: []string{discord.MockGeneralID}}, nil)
-	blocked.MediaStore = media.NewStore(t.TempDir(), false)
-	bs := newTestServer(t, blocked, RegisterMediaTools)
-	decodeResult(t, callTool(t, bs, mediaToolBatch, map[string]any{"items": []any{
-		map[string]any{"channel_id": discord.MockGeneralID, "message_id": mtTupperMsg, "avatar": true, "save_to": "a.png"},
-	}}), &out)
-	if out.Failed != 1 || !strings.Contains(out.Results[0].Error, "policy") {
-		t.Fatalf("blocked channel = %+v", out)
-	}
 }
 
 func TestMediaListFiles(t *testing.T) {

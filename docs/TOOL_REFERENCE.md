@@ -18,7 +18,7 @@ Conventions:
 | # | Tool | Kind | Description |
 | :-- | :--- | :-- | :--- |
 | 1 | [`discord_login`](#discord_login) | W | Authenticate or switch the active bot profile. The token is never echoed. |
-| 2 | [`discord_list_servers`](#discord_list_servers) | R | List guilds the bot belongs to with member counts and owners (filtered by allow/block lists). |
+| 2 | [`discord_list_servers`](#discord_list_servers) | R | List guilds the bot belongs to with member counts and owners. |
 | 3 | [`discord_get_server_info`](#discord_get_server_info) | R | Guild metadata, channels, roles, boost tier, and features. |
 | 4 | [`discord_send`](#discord_send) | W | Send text, an embed, or a local file to a channel or thread. Content ≤ 2000 chars. |
 | 5 | [`discord_read_messages`](#discord_read_messages) | R | Read message history with mentions resolved. At most one of before/after/around. |
@@ -94,7 +94,7 @@ Example response (text content):
 ### discord_list_servers
 
 **#2 · Kind:** R  
-List guilds the bot belongs to with member counts and owners (filtered by allow/block lists).
+List guilds the bot belongs to with member counts and owners.
 
 No parameters.
 

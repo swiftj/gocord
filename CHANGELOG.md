@@ -25,6 +25,16 @@
   access per channel and suggests a fix for each blocked one.
 - The Desktop extension has an optional "Saved Images Folder" field.
 
+### Removed
+
+- **All allow/block lists.** The media host allowlist
+  (`GOCORD_MEDIA_ALLOWED_HOSTS` and the built-in host list) and the Discord
+  guild/channel lists (`--allowed-guilds`, `--blocked-guilds`,
+  `--allowed-channels`, `--blocked-channels`, their `DISCORD_MCP_*` variables,
+  and the profile fields) are gone. Every guild and channel the bot can reach is
+  in scope, and media downloads accept any public URL. Local and private network
+  addresses are still refused. Old profile fields are ignored.
+
 ### Changed
 
 - Search index schema v2. Upgrading clears backfill coverage once, so channels

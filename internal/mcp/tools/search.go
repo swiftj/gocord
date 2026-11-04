@@ -160,7 +160,10 @@ func searchHandle(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) (*m
 	if warn != "" {
 		warnings = append(warnings, warn)
 	}
-	resp.Items = searchFilterHits(d, hits, targets)
+	if hits == nil {
+		hits = []dto.SearchHit{}
+	}
+	resp.Items = hits
 	resp.Count = len(resp.Items)
 	resp.Warning = strings.Join(warnings, "; ")
 	return jsonResult(resp), nil
@@ -304,20 +307,4 @@ func searchSnowLess(a, b string) bool {
 		return len(a) < len(b)
 	}
 	return a < b
-}
-
-// searchFilterHits drops hits from channels the policy forbids (e.g. Gateway-indexed
-// messages in a blocked channel) unless they belong to an allowed target.
-func searchFilterHits(d deps.Deps, hits []dto.SearchHit, targets []searchTarget) []dto.SearchHit {
-	allowedTarget := make(map[string]bool, len(targets))
-	for _, t := range targets {
-		allowedTarget[t.ID] = true
-	}
-	out := make([]dto.SearchHit, 0, len(hits))
-	for _, h := range hits {
-		if allowedTarget[h.ChannelID] || d.Guard.ChannelAllowed(h.ChannelID) {
-			out = append(out, h)
-		}
-	}
-	return out
 }

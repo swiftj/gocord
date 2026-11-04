@@ -144,7 +144,7 @@ func RegisterGuildTools(s *server.MCPServer, d deps.Deps) {
 	), guildLoginHandler(d))
 
 	s.AddTool(blTool("discord_list_servers",
-		"List the guilds the bot belongs to with member counts and owners, filtered by the guild allow/block lists.",
+		"List the guilds the bot belongs to with member counts and owners.",
 		blReadOnly(),
 	), guildListHandler(d))
 
@@ -202,13 +202,7 @@ func guildListHandler(d deps.Deps) server.ToolHandlerFunc {
 		if err != nil {
 			return errorResult(err), nil
 		}
-		out := make([]dto.GuildSummary, 0, len(gs))
-		for _, g := range gs {
-			if d.Guard.GuildAllowed(g.ID) {
-				out = append(out, g)
-			}
-		}
-		return listResult(out, ""), nil
+		return listResult(gs, ""), nil
 	}
 }
 
@@ -222,13 +216,6 @@ func guildInfoHandler(d deps.Deps) server.ToolHandlerFunc {
 		if err != nil {
 			return errorResult(err), nil
 		}
-		chans := g.Channels[:0:0]
-		for _, c := range g.Channels {
-			if d.Guard.ChannelAllowed(c.ID) {
-				chans = append(chans, c)
-			}
-		}
-		g.Channels = chans
 		return jsonResult(g), nil
 	}
 }
