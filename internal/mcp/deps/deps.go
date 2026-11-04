@@ -9,17 +9,23 @@ import (
 	"github.com/local/discord-mcp/internal/config"
 	"github.com/local/discord-mcp/internal/discord"
 	"github.com/local/discord-mcp/internal/index"
+	"github.com/local/discord-mcp/internal/lkbridge"
+	"github.com/local/discord-mcp/internal/media"
 	"github.com/local/discord-mcp/internal/policy"
 )
 
 // Deps bundles shared services. All fields are required except Logger
-// (nil means slog.Default()).
+// (nil means slog.Default()), Media (nil disables the media tools), and
+// LegendKeeper (nil means the bridge tools report "not configured").
 type Deps struct {
 	Discord discord.Service
 	Store   *index.Store
 	Guard   *policy.Guard
 	Config  *config.Config
 	Logger  *slog.Logger
+
+	Media        *media.Fetcher
+	LegendKeeper *lkbridge.Bridge
 }
 
 // Log returns the configured logger or slog.Default().

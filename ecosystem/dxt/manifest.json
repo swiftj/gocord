@@ -4,7 +4,7 @@
   "display_name": "Discord",
   "version": "0.1.0",
   "description": "Discord MCP server with FTS5 search, HITL approvals, and multi-persona webhooks.",
-  "long_description": "A static, CGO-free Go MCP server for Discord: 37 tools, discord:// resources with live subscriptions, prompts, an embedded SQLite FTS5 search index, human-in-the-loop buttons/selects/modals, multi-persona webhooks, and a governance policy engine with read-only mode, allowlists, and dry-run previews.",
+  "long_description": "A static, CGO-free Go MCP server for Discord: 44 tools, discord:// resources with live subscriptions, prompts, an embedded SQLite FTS5 search index, human-in-the-loop buttons/selects/modals, multi-persona webhooks, and a governance policy engine with read-only mode, allowlists, and dry-run previews.",
   "author": { "name": "discord-mcp contributors" },
   "license": "MIT",
   "keywords": ["discord", "mcp", "community", "moderation", "hitl"],
@@ -19,7 +19,10 @@
         "DISCORD_BOT_TOKEN": "${user_config.discord_bot_token}",
         "DISCORD_MCP_DEFAULT_GUILD_ID": "${user_config.default_guild_id}",
         "DISCORD_MCP_DB_PATH": "${user_config.db_path}",
-        "DISCORD_MCP_READ_ONLY": "${user_config.read_only_mode}"
+        "DISCORD_MCP_READ_ONLY": "${user_config.read_only_mode}",
+        "LEGENDKEEPER_API_KEY": "${user_config.legendkeeper_api_key}",
+        "LEGENDKEEPER_PROJECT_ID": "${user_config.legendkeeper_project_id}",
+        "GOCORD_MEDIA_ALLOWED_HOSTS": "${user_config.media_allowed_hosts}"
       }
     }
   },
@@ -49,6 +52,25 @@
       "title": "Read-only Mode",
       "description": "Block all write and destructive tools.",
       "default": false,
+      "required": false
+    },
+    "legendkeeper_api_key": {
+      "type": "string",
+      "title": "LegendKeeper API Key",
+      "description": "Optional. Enables the Discord → LegendKeeper image bridge tools.",
+      "sensitive": true,
+      "required": false
+    },
+    "legendkeeper_project_id": {
+      "type": "string",
+      "title": "LegendKeeper Project ID",
+      "description": "Optional default project for the bridge tools.",
+      "required": false
+    },
+    "media_allowed_hosts": {
+      "type": "string",
+      "title": "Extra Image Hosts",
+      "description": "Optional comma-separated hosts discord_fetch_media may download from (e.g. *.example.com).",
       "required": false
     }
   },
@@ -89,7 +111,14 @@
     { "name": "discord_get_poll_results", "description": "Get poll vote tallies and winners." },
     { "name": "discord_manage_threads", "description": "Create, archive, unarchive, lock, or unlock threads (supports dry_run)." },
     { "name": "discord_manage_events", "description": "List or create guild scheduled events." },
-    { "name": "discord_governance_audit", "description": "Query audit logs, list AutoMod rules, or time out a member (supports dry_run)." }
+    { "name": "discord_governance_audit", "description": "Query audit logs, list AutoMod rules, or time out a member (supports dry_run)." },
+    { "name": "discord_get_member_avatar", "description": "Get a member's avatar URLs and display name." },
+    { "name": "discord_fetch_media", "description": "Download an attachment, author avatar, or allowlisted URL and return it inline as base64 (resized, chunked)." },
+    { "name": "discord_media_to_legendkeeper", "description": "Copy a message attachment or author avatar into a LegendKeeper asset library, server-side." },
+    { "name": "fetch_url_to_legendkeeper", "description": "Copy an image from an allowlisted URL into a LegendKeeper asset library, server-side." },
+    { "name": "discord_batch_media_to_legendkeeper", "description": "Copy up to 25 Discord attachments/avatars into LegendKeeper in one call." },
+    { "name": "discord_list_tuppers", "description": "List webhook identities (Tupperbox/PluralKit characters) with their latest avatar URLs." },
+    { "name": "discord_check_access", "description": "Diagnose which channels the bot can view and read, with a fix for each blocked one." }
   ],
   "compatibility": { "platforms": ["darwin", "linux"] }
 }

@@ -50,6 +50,17 @@ type Config struct {
 	LogLevel        string
 	ShowVersion     bool
 	ListToolsJSON   bool // hidden: print tool list as JSON (used by build-dxt.sh)
+
+	// Media (env only): extra allowed hosts and the download cap in bytes (0 = default).
+	MediaAllowedHosts []string
+	MediaMaxBytes     int64
+	// LegendKeeper bridge (env only). An empty key leaves the bridge unconfigured.
+	LegendKeeperAPIKey    string `json:"-"` // never serialised or logged
+	LegendKeeperProjectID string
+	LegendKeeperBaseURL   string
+	// MediaCacheDir holds the LegendKeeper upload dedupe index
+	// ($XDG_CACHE_HOME/gocord, else ~/.cache/gocord).
+	MediaCacheDir string
 }
 
 // Defaults.
@@ -166,6 +177,32 @@ func Load(args []string, getenv func(string) string) (*Config, error) {
 	c.AllowedChannels = list("allowed-channels", allowedC, "DISCORD_MCP_ALLOWED_CHANNELS", p.AllowedChannels)
 	c.BlockedChannels = list("blocked-channels", blockedC, "DISCORD_MCP_BLOCKED_CHANNELS", p.BlockedChannels)
 	c.DefaultGuildID = pick("default-guild", defGuild, "DISCORD_MCP_DEFAULT_GUILD_ID", p.DefaultGuildID)
+
+	// A host that leaves an optional "${user_config.x}" unsubstituted means unset.
+	env := func(name string) string {
+		v := strings.TrimSpace(getenv(name))
+		if strings.HasPrefix(v, "${") {
+			return ""
+		}
+		return v
+	}
+	c.MediaAllowedHosts = splitList(env("GOCORD_MEDIA_ALLOWED_HOSTS"))
+	if v := env("GOCORD_MEDIA_MAX_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("GOCORD_MEDIA_MAX_BYTES: want a positive integer, got %q", v)
+		}
+		c.MediaMaxBytes = n
+	}
+	c.LegendKeeperAPIKey = env("LEGENDKEEPER_API_KEY")
+	c.LegendKeeperProjectID = env("LEGENDKEEPER_PROJECT_ID")
+	c.LegendKeeperBaseURL = env("LEGENDKEEPER_BASE_URL")
+	switch {
+	case getenv("XDG_CACHE_HOME") != "":
+		c.MediaCacheDir = filepath.Join(getenv("XDG_CACHE_HOME"), "gocord")
+	case getenv("HOME") != "":
+		c.MediaCacheDir = filepath.Join(getenv("HOME"), ".cache", "gocord")
+	}
 
 	return &c, nil
 }

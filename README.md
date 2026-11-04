@@ -5,7 +5,8 @@ server for Discord — one binary, no runtime dependencies — plus a complete C
 ecosystem suite: a Claude Desktop extension (`.dxt`), and a Claude Code / Cowork
 plugin with skills, slash commands, sub-agents, and hooks. It offers 100%
 baseline parity with [`barryyip0625/mcp-discord`](https://github.com/barryyip0625/mcp-discord)
-(28 tools) plus 9 differentiating tools, for **37 tools** in total.
+(28 tools) plus 9 differentiating tools and 7 media, LegendKeeper, and diagnostic
+tools, for **44 tools** in total.
 
 - **Embedded SQLite + FTS5 search** — works around Discord's `403 Forbidden`
   bot-search restriction with real-time Gateway indexing and lazy REST backfill;
@@ -71,7 +72,7 @@ discord-mcp --version
 macOS: release binaries are not notarised. If Gatekeeper blocks the binary, run
 `xattr -d com.apple.quarantine /usr/local/bin/discord-mcp`.
 
-Or build from source (Go 1.26+):
+Or build from source (Go 1.27+):
 
 ```sh
 CGO_ENABLED=0 go install github.com/OWNER/discord-mcp/cmd/discord-mcp@latest
@@ -146,6 +147,11 @@ Precedence: **flag > env > config file > default**. See [.env.example](.env.exam
 | `--default-guild` | `DISCORD_MCP_DEFAULT_GUILD_ID` | — | Used when a tool omits `guild_id` |
 | `--log-level` | `DISCORD_MCP_LOG_LEVEL` | `info` | Logs go to stderr only |
 | `--version` | — | — | Prints version, commit, and build date |
+| — | `GOCORD_MEDIA_ALLOWED_HOSTS` | — | Extra image hosts for media tools (comma-separated, `*.example.com` allowed) |
+| — | `GOCORD_MEDIA_MAX_BYTES` | `26214400` | Download cap for media tools (25 MB) |
+| — | `LEGENDKEEPER_API_KEY` | — | Enables the LegendKeeper bridge tools. Never logged. |
+| — | `LEGENDKEEPER_PROJECT_ID` | — | Default LegendKeeper project for the bridge |
+| — | `LEGENDKEEPER_BASE_URL` | SDK default | LegendKeeper API base URL override |
 
 Profiles file — tokens are referenced by env var name, never inline:
 
@@ -165,7 +171,7 @@ Profiles file — tokens are referenced by env var name, never inline:
 
 ## Tools, resources, and prompts
 
-37 tools — full parameter tables and examples in
+44 tools — full parameter tables and examples in
 [docs/TOOL_REFERENCE.md](docs/TOOL_REFERENCE.md).
 
 | Area | Tools |
@@ -180,6 +186,9 @@ Profiles file — tokens are referenced by env var name, never inline:
 | Search | `discord_search_messages` |
 | HITL | `discord_await_interaction` |
 | Events & governance | `discord_manage_events`, `discord_governance_audit` |
+| Media & images | `discord_fetch_media`, `discord_get_member_avatar`, `discord_list_tuppers` |
+| LegendKeeper bridge | `discord_media_to_legendkeeper`, `fetch_url_to_legendkeeper`, `discord_batch_media_to_legendkeeper` |
+| Diagnostics | `discord_check_access` |
 
 **Resources:** `discord://guilds` (guild list), `discord://guilds/{guild_id}/map`
 (Markdown map of roles, categories, channels, threads), and
@@ -190,6 +199,84 @@ resolved mentions). Map and transcript support subscriptions.
 `discord-hitl-approval`.
 
 Architecture and data flows: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Media and images
+
+Claude often runs in a sandbox that cannot open Discord's CDN, LegendKeeper's
+asset host, or other image hosts. gocord fetches images server-side and offers
+three paths (full contract: [specs/05](specs/05-media-and-legendkeeper.md)):
+
+1. **Inline bytes:** `discord_fetch_media` returns an attachment, a message
+   author's avatar, or an allowlisted URL as base64 inside the tool result. By
+   default it resizes to 1600 px and encodes as JPEG; `format: "original"`
+   returns the untouched bytes. Payloads over 1,000,000 bytes are paged with
+   `offset`/`length`. Every chunk carries the same `sha256`, and the
+   concatenated chunks reproduce it.
+2. **Bridge to LegendKeeper:** `discord_media_to_legendkeeper`,
+   `fetch_url_to_legendkeeper`, and `discord_batch_media_to_legendkeeper` copy
+   images straight into a LegendKeeper asset library. They use the
+   [`golk`](https://github.com/swiftj/golk) SDK and create folders such as
+   `Campaign/Characters` if missing. They return the asset URL, and no bytes
+   pass through the model.
+   - Re-uploading identical bytes to the same project returns the existing asset
+     (`deduplicated: true`). The dedupe index lives in
+     `$XDG_CACHE_HOME/gocord/lk-assets.json`.
+   - The bridge needs `LEGENDKEEPER_API_KEY`; without it the tools say
+     "LegendKeeper not configured".
+   - `--read-only` blocks uploads.
+3. **Avatar discovery:** messages now carry `is_webhook`, `webhook_id`,
+   `author_display_name`, and `author_avatar_url`.
+   - For Tupperbox and PluralKit messages these are the character's name and art.
+   - `discord_list_tuppers` scans the index (backfilling as search does) and
+     lists every webhook character with its most recent avatar.
+   - `discord_get_member_avatar` returns a member's account and server avatars.
+
+**Limits and safety**
+
+- URL sources must be on an allowlisted host: `cdn.discordapp.com`,
+  `media.discordapp.net`, `images-ext-*.discordapp.net`, `*.magnific.com`,
+  `*.freepik.com`, `assets.legendkeeper.com`, plus `GOCORD_MEDIA_ALLOWED_HOSTS`.
+- Downloads:
+  - are capped at 25 MB (`GOCORD_MEDIA_MAX_BYTES`);
+  - time out after 30 s;
+  - follow at most 5 redirects, each re-checked against the allowlist;
+  - never send credentials.
+- The image type is sniffed from the bytes: only PNG, JPEG, GIF, and WebP are
+  accepted.
+- Resizing is pure Go (`golang.org/x/image`, CatmullRom). WebP output is
+  written as PNG.
+
+**Signed URLs expire.** Discord attachment and avatar URLs are signed
+(`?ex=&is=&hm=`) and usually expire after about 24 hours. Don't cache them.
+Pass `channel_id` + `message_id` instead: gocord re-fetches the message for a
+fresh URL. Avatar URLs from `discord_list_tuppers` come from each character's
+latest message, so fetch or bridge them promptly.
+
+**`discord_check_access`** computes which channels the bot can view and read
+from its roles and the channel overwrites. For each blocked channel it says
+which category or channel needs an overwrite for which role. This is useful
+when private categories leave the bot out.
+
+### Example: put a Tupperbox character's art in LegendKeeper
+
+1. `discord_list_tuppers` → find "Ser Thaddeus Mournvale":
+
+   ```json
+   {"tuppers": [{"display_name": "Ser Thaddeus Mournvale", "webhook_id": "100000000000000700",
+     "last_seen_message_id": "100000000000000150", "last_seen_channel_id": "100000000000000010",
+     "avatar_url": "https://cdn.discordapp.com/avatars/100000000000000700/…png?size=1024", "message_count": 42}]}
+   ```
+
+2. `discord_media_to_legendkeeper` with the avatar of that message:
+
+   ```json
+   {"channel_id": "100000000000000010", "message_id": "100000000000000150", "avatar": true,
+    "lk_folder_path": "Druskenvald SPG/Characters", "name": "Ser Thaddeus Mournvale"}
+   ```
+
+   It returns `{"asset_id": "…", "url": "https://assets.legendkeeper.com/…", …}`.
+
+3. Use the returned `url` in a LegendKeeper image block.
 
 ## Development
 

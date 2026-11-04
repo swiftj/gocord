@@ -89,3 +89,25 @@ func TestExpandHome(t *testing.T) {
 		t.Fatalf("db path = %q", c.DBPath)
 	}
 }
+
+func TestMediaAndLegendKeeperEnv(t *testing.T) {
+	env := map[string]string{
+		"GOCORD_MEDIA_ALLOWED_HOSTS": "*.example.com, img.test",
+		"GOCORD_MEDIA_MAX_BYTES":     "1048576",
+		"LEGENDKEEPER_API_KEY":       "lk_test_key",
+		"LEGENDKEEPER_PROJECT_ID":    "${user_config.legendkeeper_project_id}", // unsubstituted placeholder
+		"XDG_CACHE_HOME":             "/tmp/cache",
+	}
+	c, err := Load(nil, func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.MediaAllowedHosts) != 2 || c.MediaMaxBytes != 1<<20 || c.LegendKeeperAPIKey != "lk_test_key" ||
+		c.LegendKeeperProjectID != "" || c.MediaCacheDir != "/tmp/cache/gocord" {
+		t.Fatalf("config = %+v", c)
+	}
+	env["GOCORD_MEDIA_MAX_BYTES"] = "lots"
+	if _, err := Load(nil, func(k string) string { return env[k] }); err == nil {
+		t.Fatal("invalid GOCORD_MEDIA_MAX_BYTES must fail")
+	}
+}

@@ -5,10 +5,12 @@ package index
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +25,8 @@ var ErrNotFound = errors.New("index: not found")
 // MemoryPath selects a RAM-only database.
 const MemoryPath = ":memory:"
 
-const schemaVersion = 1
+// schemaVersion 2 added the webhook/identity/attachment columns (see migrateV2).
+const schemaVersion = 2
 
 // Store wraps the SQLite database.
 type Store struct {
@@ -82,7 +85,11 @@ var migrations = []string{
 		created_at       INTEGER NOT NULL,
 		edited_at        INTEGER,
 		has_attachments  INTEGER NOT NULL DEFAULT 0,
-		deleted          INTEGER NOT NULL DEFAULT 0
+		deleted          INTEGER NOT NULL DEFAULT 0,
+		webhook_id          TEXT,
+		author_display_name TEXT,
+		author_avatar_url   TEXT,
+		attachments_json    TEXT
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_messages_chan_time ON messages(channel_id, created_at)`,
 	`CREATE INDEX IF NOT EXISTS idx_messages_guild_time ON messages(guild_id, created_at)`,
@@ -125,14 +132,64 @@ var migrations = []string{
 		webhook_token TEXT NOT NULL,
 		created_at    INTEGER NOT NULL
 	)`,
-	fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion),
 }
 
+// v2Columns are the columns schema v2 added to messages.
+var v2Columns = []string{"webhook_id TEXT", "author_display_name TEXT", "author_avatar_url TEXT", "attachments_json TEXT"}
+
 func (s *Store) migrate(ctx context.Context) error {
+	var version int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
+		return fmt.Errorf("index: migrate: %w", err)
+	}
 	for _, stmt := range migrations {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("index: migrate: %w", err)
 		}
+	}
+	if version < 2 {
+		if err := s.migrateV2(ctx); err != nil {
+			return err
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_messages_webhook ON messages(guild_id, webhook_id) WHERE webhook_id IS NOT NULL`); err != nil {
+		return fmt.Errorf("index: migrate: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return fmt.Errorf("index: migrate: %w", err)
+	}
+	return nil
+}
+
+// migrateV2 adds the v2 columns to a v1 database and forgets backfill coverage,
+// so the next search re-reads channels and fills webhook and avatar data for
+// messages indexed before the upgrade.
+func (s *Store) migrateV2(ctx context.Context) error {
+	have := map[string]bool{}
+	rows, err := s.db.QueryContext(ctx, `SELECT name FROM pragma_table_info('messages')`)
+	if err != nil {
+		return fmt.Errorf("index: migrate v2: %w", err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return fmt.Errorf("index: migrate v2: %w", err)
+		}
+		have[name] = true
+	}
+	rows.Close()
+	for _, col := range v2Columns {
+		name, _, _ := strings.Cut(col, " ")
+		if have[name] {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE messages ADD COLUMN `+col); err != nil {
+			return fmt.Errorf("index: migrate v2: %w", err)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM channel_coverage`); err != nil {
+		return fmt.Errorf("index: migrate v2: %w", err)
 	}
 	return nil
 }
@@ -140,13 +197,18 @@ func (s *Store) migrate(ctx context.Context) error {
 // ---------- Messages ----------
 
 const upsertSQL = `INSERT INTO messages
-	(id, guild_id, channel_id, thread_parent_id, author_id, author_name, content, created_at, edited_at, has_attachments, deleted)
-	VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, 0)
+	(id, guild_id, channel_id, thread_parent_id, author_id, author_name, content, created_at, edited_at, has_attachments, deleted,
+	 webhook_id, author_display_name, author_avatar_url, attachments_json)
+	VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, 0, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))
 	ON CONFLICT(id) DO UPDATE SET
 		content = excluded.content,
 		author_name = excluded.author_name,
 		edited_at = excluded.edited_at,
 		has_attachments = excluded.has_attachments,
+		webhook_id = COALESCE(excluded.webhook_id, messages.webhook_id),
+		author_display_name = COALESCE(excluded.author_display_name, messages.author_display_name),
+		author_avatar_url = COALESCE(excluded.author_avatar_url, messages.author_avatar_url),
+		attachments_json = COALESCE(excluded.attachments_json, messages.attachments_json),
 		thread_parent_id = COALESCE(excluded.thread_parent_id, messages.thread_parent_id),
 		deleted = 0`
 
@@ -182,8 +244,17 @@ func (s *Store) UpsertMessages(ctx context.Context, guildID, threadParentID stri
 				edited = t.UnixMilli()
 			}
 		}
+		var atts string
+		if len(m.Attachments) > 0 {
+			b, err := json.Marshal(m.Attachments)
+			if err != nil {
+				return fmt.Errorf("index: encode attachments %s: %w", m.ID, err)
+			}
+			atts = string(b)
+		}
 		if _, err := stmt.ExecContext(ctx, m.ID, guildID, m.ChannelID, threadParentID, m.AuthorID, m.Author,
-			m.Content, created.UnixMilli(), edited, boolInt(len(m.Attachments) > 0)); err != nil {
+			m.Content, created.UnixMilli(), edited, boolInt(len(m.Attachments) > 0),
+			m.WebhookID, m.AuthorDisplayName, m.AuthorAvatarURL, atts); err != nil {
 			return fmt.Errorf("index: upsert %s: %w", m.ID, err)
 		}
 	}
@@ -268,6 +339,7 @@ func (s *Store) search(ctx context.Context, q dto.SearchQuery, match string) ([]
 
 	//nolint:gosec // G202: WHERE fragments are constant strings; every value is a bound parameter
 	query := `SELECT m.id, m.channel_id, m.author_id, m.author_name, m.content, m.created_at, m.edited_at, m.has_attachments,
+		COALESCE(m.webhook_id, ''), COALESCE(m.author_display_name, ''), COALESCE(m.author_avatar_url, ''), COALESCE(m.attachments_json, ''),
 		snippet(messages_fts, 0, '**', '**', '…', 12), bm25(messages_fts)
 		FROM messages_fts JOIN messages m ON m.rowid = messages_fts.rowid
 		WHERE ` + strings.Join(where, " AND ") + `
@@ -285,8 +357,10 @@ func (s *Store) search(ctx context.Context, q dto.SearchQuery, match string) ([]
 			created int64
 			edited  sql.NullInt64
 			hasAtt  int
+			atts    string
 		)
-		if err := rows.Scan(&h.ID, &h.ChannelID, &h.AuthorID, &h.Author, &h.Content, &created, &edited, &hasAtt, &h.Snippet, &h.Rank); err != nil {
+		if err := rows.Scan(&h.ID, &h.ChannelID, &h.AuthorID, &h.Author, &h.Content, &created, &edited, &hasAtt,
+			&h.WebhookID, &h.AuthorDisplayName, &h.AuthorAvatarURL, &atts, &h.Snippet, &h.Rank); err != nil {
 			return nil, fmt.Errorf("index: scan: %w", err)
 		}
 		h.Content = dto.Truncate(h.Content, dto.MaxContentChars)
@@ -294,7 +368,13 @@ func (s *Store) search(ctx context.Context, q dto.SearchQuery, match string) ([]
 		if edited.Valid {
 			h.EditedAt = dto.FormatTime(time.UnixMilli(edited.Int64))
 		}
-		if hasAtt == 1 {
+		h.IsWebhook = h.WebhookID != ""
+		if atts != "" {
+			if err := json.Unmarshal([]byte(atts), &h.Attachments); err != nil {
+				h.Attachments = nil
+			}
+		}
+		if hasAtt == 1 && len(h.Attachments) == 0 {
 			h.Attachments = []dto.AttachmentRef{{Filename: "(attachment)"}}
 		}
 		out = append(out, h)
@@ -303,6 +383,59 @@ func (s *Store) search(ctx context.Context, q dto.SearchQuery, match string) ([]
 		return nil, fmt.Errorf("index: search: %w", err)
 	}
 	return out, nil
+}
+
+// ListWebhookAuthors groups indexed webhook messages by (webhook_id, display
+// name) and reports each group's newest message, avatar, and count, newest first.
+func (s *Store) ListWebhookAuthors(ctx context.Context, q dto.TupperQuery) ([]dto.TupperInfo, error) {
+	where := []string{"guild_id = ?", "deleted = 0", "webhook_id IS NOT NULL"}
+	args := []any{q.GuildID}
+	if q.ChannelID != "" {
+		where = append(where, "(channel_id = ? OR thread_parent_id = ?)")
+		args = append(args, q.ChannelID, q.ChannelID)
+	}
+	if q.After != "" {
+		after, err := strconv.ParseInt(q.After, 10, 64)
+		if err != nil || !dto.IsSnowflake(q.After) {
+			return nil, fmt.Errorf("index: after %q is not a Snowflake", q.After)
+		}
+		where = append(where, "CAST(id AS INTEGER) > ?")
+		args = append(args, after)
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	args = append(args, limit)
+	// With a single max() aggregate, SQLite takes the bare columns (id,
+	// created_at, channel_id, author_avatar_url) from the row holding the
+	// maximum: the newest message. Snowflakes order by time, then sequence.
+	//nolint:gosec // G202: WHERE fragments are constant strings; every value is a bound parameter
+	query := `SELECT webhook_id, COALESCE(NULLIF(author_display_name, ''), author_name) AS display_name,
+		MAX(CAST(id AS INTEGER)) AS newest, created_at, id, channel_id, COALESCE(author_avatar_url, ''), COUNT(*)
+		FROM messages WHERE ` + strings.Join(where, " AND ") + `
+		GROUP BY webhook_id, display_name
+		ORDER BY newest DESC
+		LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("index: list webhook authors: %w", err)
+	}
+	defer rows.Close()
+	var out []dto.TupperInfo
+	for rows.Next() {
+		var (
+			t      dto.TupperInfo
+			newest int64
+			latest int64
+		)
+		if err := rows.Scan(&t.WebhookID, &t.DisplayName, &newest, &latest, &t.LastSeenMessageID, &t.LastSeenChannelID, &t.AvatarURL, &t.MessageCount); err != nil {
+			return nil, fmt.Errorf("index: scan webhook author: %w", err)
+		}
+		t.LastSeenAt = dto.FormatTime(time.UnixMilli(latest))
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 func isFTSSyntaxError(err error) bool {

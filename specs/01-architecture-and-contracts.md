@@ -15,7 +15,7 @@
 ## 2. Locked Stack
 | Concern | Choice |
 | :--- | :--- |
-| Language | Go 1.26+ (required by `mcp-go` v1.5.0), `CGO_ENABLED=0` for every shipped artifact |
+| Language | Go 1.27+ (required by `golk`; `mcp-go` v1.5.0 needs 1.26), `CGO_ENABLED=0` for every shipped artifact |
 | Module | `github.com/local/discord-mcp` (keep an existing `go.mod` path if present) |
 | MCP SDK | `github.com/mark3labs/mcp-go`: `server.NewMCPServer`, `server.ServeStdio`, `server.NewStreamableHTTPServer` (endpoint `/mcp`) |
 | Discord | `github.com/bwmarrin/discordgo` (REST + Gateway v10) |

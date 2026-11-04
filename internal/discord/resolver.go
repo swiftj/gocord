@@ -44,13 +44,16 @@ type cachedRole struct {
 }
 
 type cachedMember struct {
-	UserID     string
-	GuildID    string
-	Username   string
-	GlobalName string
-	Nick       string
-	Bot        bool
-	Roles      []string
+	UserID        string
+	GuildID       string
+	Username      string
+	GlobalName    string
+	Nick          string
+	Bot           bool
+	Roles         []string
+	Discriminator string
+	UserAvatar    string // user avatar hash
+	GuildAvatar   string // guild-specific avatar hash
 }
 
 // resolverREST is the REST fallback used on cache misses. *Client implements it;
@@ -250,6 +253,7 @@ func (r *Resolver) putMemberLocked(guildID string, m *discordgo.Member) {
 	gm[m.User.ID] = &cachedMember{
 		UserID: m.User.ID, GuildID: guildID, Username: m.User.Username, GlobalName: m.User.GlobalName,
 		Nick: m.Nick, Bot: m.User.Bot, Roles: slices.Clone(m.Roles),
+		Discriminator: m.User.Discriminator, UserAvatar: m.User.Avatar, GuildAvatar: m.Avatar,
 	}
 	r.users[m.User.ID] = m.User.Username
 }
@@ -291,6 +295,26 @@ func (r *Resolver) guild(id string) (cachedGuild, bool) {
 		return cachedGuild{}, false
 	}
 	return *g, true
+}
+
+// member returns a cached guild member.
+func (r *Resolver) member(guildID, userID string) (cachedMember, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m, ok := r.members[guildID][userID]
+	if !ok {
+		return cachedMember{}, false
+	}
+	return *m, true
+}
+
+// channelGuild returns the guild of a cached channel or thread ("" if unknown).
+func (r *Resolver) channelGuild(channelID string) string {
+	c, ok := r.channel(channelID)
+	if !ok {
+		return ""
+	}
+	return c.GuildID
 }
 
 // threadParent returns the parent channel of a thread, or "" when channelID is

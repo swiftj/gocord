@@ -3,12 +3,13 @@
 Zero-dependency Golang Discord MCP server (`stdio` + `Streamable HTTP`) with embedded SQLite FTS5 search, Human-in-the-Loop (HITL) Discord interactions, Multi-Persona webhook routing, and a complete Claude Desktop (`.dxt`), Cowork, and Code (`.claude-plugin`) suite.
 
 ## 1. Locked Technical Stack
-- **Language:** Go 1.26+ (minimum required by `mcp-go` v1.5.0). `CGO_ENABLED=0` mandatory on all builds and non-race tests; race tests use `CGO_ENABLED=1` (Linux `-race` requires cgo — see `specs/04-release-and-ci.md` §2).
+- **Language:** Go 1.27+ (minimum required by the `golk` LegendKeeper SDK; `mcp-go` v1.5.0 needs 1.26). `CGO_ENABLED=0` mandatory on all builds and non-race tests; race tests use `CGO_ENABLED=1` (Linux `-race` requires cgo — see `specs/04-release-and-ci.md` §2).
 - **Target Platforms:** `darwin/arm64`, `linux/amd64`, `linux/arm64`. Intel Macs (`darwin/amd64`) are not supported.
 - **Core Dependencies:**
   - MCP SDK: `github.com/mark3labs/mcp-go` (`stdio` & `Streamable HTTP` on `/mcp`)
   - Discord: `github.com/bwmarrin/discordgo` (REST + Gateway v10)
   - FTS5 Indexer: `modernc.org/sqlite` (CGO-free SQLite; defaults to `:memory:`, configurable to disk)
+  - Images: `golang.org/x/image` (pure-Go resize + WebP decode) · LegendKeeper: `github.com/swiftj/golk`
 - **Logging:** `log/slog` JSON strictly to `os.Stderr`. **NEVER write logs to `os.Stdout`** (corrupts `stdio` JSON-RPC frames).
 
 ## 2. Public Repository & Security Rules
@@ -30,7 +31,8 @@ Do NOT guess interfaces or schemas. Read ONLY the specification file relevant to
 | Spec File | When to Read | Contents |
 | :--- | :--- | :--- |
 | `specs/01-architecture-and-contracts.md` | Wave 1 or editing `internal/discord/`, `internal/dto/`, `internal/index/` | Monorepo layout, `discord.Service` Go interface, DTO models, SQLite FTS5 schema, Policy guard. |
-| `specs/02-mcp-surface.md` | Editing `internal/mcp/**` | All 37 MCP Tool schemas (28 baseline + 9 next-gen), `discord://` Resources, and Prompts. |
+| `specs/02-mcp-surface.md` | Editing `internal/mcp/**` | The 37 core MCP Tool schemas (28 baseline + 9 next-gen), `discord://` Resources, and Prompts. |
+| `specs/05-media-and-legendkeeper.md` | Editing `internal/media/`, `internal/lkbridge/`, or the media/bridge/tupper/access tools | Message identity fields, media resolver, 7 media/LegendKeeper/diagnostic tools (38–44), index schema v2. |
 | `specs/03-claude-ecosystem.md` | Editing `ecosystem/**` or `docs/**` | `.claude-plugin` manifest, 3 `SKILL.md` specs, 4 Slash Commands, 2 Sub-Agents, Hooks, and `.dxt` spec. |
 | `specs/04-release-and-ci.md` | Editing `.github/**`, `.goreleaser.yaml`, `Makefile` | GitHub Actions CI/CD, macOS/Linux cross-compilation matrix, GoReleaser, `.gitignore`, OSS files. |
 
@@ -62,4 +64,4 @@ Spawn 4 parallel teammates. Each teammate reads ONLY its assigned spec file(s):
 ### Wave 3: Integration & Release Verification (Lead Agent)
 1. Wire all registrations in `internal/mcp/server.go` and `cmd/discord-mcp/main.go`.
 2. Run `make test` and `make build-all` to verify all 3 macOS/Linux binaries compile cleanly.
-3. Smoke-test `stdio` JSON-RPC `initialize` and `tools/list` (verifying all 37 tools).
+3. Smoke-test `stdio` JSON-RPC `initialize` and `tools/list` (verifying all 44 tools).

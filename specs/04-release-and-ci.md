@@ -37,7 +37,7 @@ Targets (all `.PHONY`). `VERSION ?= $(shell git describe --tags --always --dirty
 | `fmt` | `gofmt -s -w . && go mod tidy` |
 | `dxt` | `./ecosystem/dxt/build-dxt.sh $(VERSION)` |
 | `snapshot` | `goreleaser release --snapshot --clean` |
-| `smoke` | `build`, then pipe an `initialize` + `tools/list` JSON-RPC pair into `bin/discord-mcp --transport stdio` and assert 37 tools with `jq` |
+| `smoke` | `build`, then pipe an `initialize` + `tools/list` JSON-RPC pair into `bin/discord-mcp --transport stdio` and assert 44 tools with `jq` |
 | `clean` | `rm -rf bin dist` |
 
 `.golangci.yml`: enable `govet`, `staticcheck`, `errcheck`, `ineffassign`, `unused`, `gosec`, `forbidigo`. Configure `forbidigo` to forbid `fmt.Print*` and `os.Stdout` in `internal/**` and `cmd/**`, except `cmd/discord-mcp/main.go`'s `--version`/`--help` output.
@@ -207,7 +207,7 @@ Sections, in order:
 5. **Claude Code:** `claude mcp add discord -e DISCORD_BOT_TOKEN=… -- discord-mcp`, or install the plugin from `ecosystem/claude-plugin` (`/plugin marketplace add …` → `/plugin install discord`).
 6. **Claude Cowork:** install the `ecosystem/claude-plugin` plugin. Set `DISCORD_BOT_TOKEN` in the environment.
 7. Configuration table (from spec 01 §6), safety features (`--read-only`, allowlists, `dry_run`).
-8. Tool overview (37 tools, linking to `docs/TOOL_REFERENCE.md`), resources, prompts.
+8. Tool overview (44 tools, linking to `docs/TOOL_REFERENCE.md`), resources, prompts.
 9. Development: `make build`, `make test`, `make test-race`, `make smoke`.
 10. License + security links.
 
@@ -218,6 +218,6 @@ A build is complete only when all of these pass:
 - [ ] `make build` (`CGO_ENABLED=0 … go build`) succeeds with zero warnings, and `make build-all` produces all 4 binaries.
 - [ ] `make test` (`CGO_ENABLED=0`) and `make test-race` (`CGO_ENABLED=1 -race`) pass across `internal/index`, `internal/discord`, `internal/policy`, and `internal/mcp/...`.
 - [ ] `make lint` is clean.
-- [ ] `make smoke`: a stdio `tools/list` returns exactly 37 tools with descriptions and typed JSON schemas.
+- [ ] `make smoke`: a stdio `tools/list` returns exactly 44 tools with descriptions and typed JSON schemas.
 - [ ] All `ecosystem/claude-plugin` skills, commands, agents, and hooks, plus the `.dxt` manifest, are populated and valid (JSON parses, frontmatter is present, and `dxt validate` passes when available).
 - [ ] `gitleaks` finds no secrets.

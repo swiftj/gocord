@@ -18,7 +18,7 @@ flowchart LR
     subgraph Binary["discord-mcp (static Go binary)"]
         T["Transport<br/>stdio · Streamable HTTP /mcp"]
         S["MCP server<br/>internal/mcp/server.go"]
-        TL["Tools (37)<br/>internal/mcp/tools"]
+        TL["Tools (44)<br/>internal/mcp/tools"]
         R["Resources<br/>discord://…"]
         P["Prompts"]
         G["Policy guard<br/>internal/policy"]

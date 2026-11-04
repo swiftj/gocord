@@ -63,6 +63,9 @@ type MockClient struct {
 	Polls     map[string]dto.PollResult       // messageID -> poll
 	AuditLogs map[string][]dto.AuditLogEntry  // guildID -> entries
 	AutoMod   map[string][]dto.AutoModRule    // guildID -> rules
+	// Profiles overrides GetMember (guildID -> userID -> profile). A member
+	// without an entry is derived from Members, with role names mapped to IDs.
+	Profiles map[string]map[string]dto.MemberProfile
 
 	// NextInteraction is returned by AwaitInteraction. Nil means the wait times out.
 	NextInteraction *dto.InteractionResult
@@ -130,6 +133,7 @@ func NewMockClient() *MockClient {
 		Polls:     map[string]dto.PollResult{},
 		AuditLogs: map[string][]dto.AuditLogEntry{MockGuildID: {{ID: "100000000000000200", ActionType: 22, Action: "MEMBER_BAN_ADD", UserID: MockAliceID, User: "alice", TargetID: "100000000000000052", Reason: "spam", CreatedAt: dto.FormatTime(base)}}},
 		AutoMod:   map[string][]dto.AutoModRule{MockGuildID: {{ID: "100000000000000300", Name: "Block invites", TriggerType: "keyword", Enabled: true, Keywords: []string{"discord.gg/*"}, Actions: []string{"block_message"}}}},
+		Profiles:  map[string]map[string]dto.MemberProfile{},
 		Err:       map[string]error{},
 		Now:       func() time.Time { return base.Add(time.Hour) },
 		seq:       1000,
@@ -488,6 +492,23 @@ func (m *MockClient) SendMessage(_ context.Context, req dto.SendMessageReq) (*dt
 	return &msg, nil
 }
 
+func (m *MockClient) GetMessage(_ context.Context, channelID, messageID string) (*dto.MessageItem, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.record("GetMessage", channelID, messageID); err != nil {
+		return nil, err
+	}
+	if _, err := m.channel(channelID); err != nil {
+		return nil, err
+	}
+	for _, msg := range m.Messages[channelID] {
+		if msg.ID == messageID {
+			return &msg, nil
+		}
+	}
+	return nil, notFound("message", messageID)
+}
+
 func (m *MockClient) ReadMessages(_ context.Context, req dto.ReadMessagesReq) ([]dto.MessageItem, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -828,6 +849,35 @@ func (m *MockClient) ListMembers(_ context.Context, guildID string, limit int, a
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (m *MockClient) GetMember(_ context.Context, guildID, userID string) (*dto.MemberProfile, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.record("GetMember", guildID, userID); err != nil {
+		return nil, err
+	}
+	if userID == "" {
+		userID = m.Session.BotUserID
+	}
+	if p, ok := m.Profiles[guildID][userID]; ok {
+		return &p, nil
+	}
+	for _, mem := range m.Members[guildID] {
+		if mem.UserID != userID {
+			continue
+		}
+		p := dto.MemberProfile{GuildID: guildID, UserID: mem.UserID, Username: mem.Username, Nick: mem.Nick, Bot: mem.Bot}
+		for _, name := range mem.Roles {
+			for _, r := range m.Roles[guildID] {
+				if r.Name == name {
+					p.Roles = append(p.Roles, r.ID)
+				}
+			}
+		}
+		return &p, nil
+	}
+	return nil, notFound("member", userID)
 }
 
 func (m *MockClient) TimeoutMember(_ context.Context, guildID, userID string, durationSeconds int, reason string) error {

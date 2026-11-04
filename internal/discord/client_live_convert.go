@@ -66,10 +66,21 @@ func toChannelInfo(c *discordgo.Channel) dto.ChannelInfo {
 	if c == nil {
 		return dto.ChannelInfo{}
 	}
-	return dto.ChannelInfo{
+	info := dto.ChannelInfo{
 		ID: c.ID, GuildID: c.GuildID, Name: c.Name, Type: channelTypeString(c.Type),
 		ParentID: c.ParentID, Position: c.Position, Topic: c.Topic, NSFW: c.NSFW,
 	}
+	for _, o := range c.PermissionOverwrites {
+		if o == nil {
+			continue
+		}
+		t := "role"
+		if o.Type == discordgo.PermissionOverwriteTypeMember {
+			t = "member"
+		}
+		info.Overwrites = append(info.Overwrites, dto.PermissionOverwrite{ID: o.ID, Type: t, Allow: o.Allow, Deny: o.Deny})
+	}
+	return info
 }
 
 // toThreadInfo converts a thread channel. tags maps forum tag IDs to names
@@ -118,6 +129,13 @@ type nameLookup interface {
 	userName(id string) (string, bool)
 	roleName(id string) (string, bool)
 	channelName(id string) (string, bool)
+}
+
+// memberLookup is the optional part of a nameLookup that supplies cached
+// guild members (nick and guild avatar) and a channel's guild. *Resolver implements it.
+type memberLookup interface {
+	member(guildID, userID string) (cachedMember, bool)
+	channelGuild(channelID string) string
 }
 
 var mentionRe = regexp.MustCompile(`<(@!?|@&|#)(\d{15,20})>`)
@@ -183,6 +201,9 @@ func toMessageItem(m *discordgo.Message, names nameLookup) dto.MessageItem {
 		item.AuthorID = m.Author.ID
 		item.Author = m.Author.Username
 	}
+	item.WebhookID = m.WebhookID
+	item.IsWebhook = m.WebhookID != ""
+	setAuthorIdentity(&item, m, names)
 	if m.EditedTimestamp != nil {
 		item.EditedAt = dto.FormatTime(*m.EditedTimestamp)
 	}
@@ -195,7 +216,8 @@ func toMessageItem(m *discordgo.Message, names nameLookup) dto.MessageItem {
 			continue
 		}
 		item.Attachments = append(item.Attachments, dto.AttachmentRef{
-			Filename: a.Filename, URL: a.URL, Size: a.Size, ContentType: a.ContentType,
+			ID: a.ID, Filename: a.Filename, URL: a.URL, ProxyURL: a.ProxyURL, Size: a.Size,
+			ContentType: a.ContentType, Width: a.Width, Height: a.Height,
 		})
 	}
 	for _, e := range m.Embeds {
@@ -213,6 +235,40 @@ func toMessageItem(m *discordgo.Message, names nameLookup) dto.MessageItem {
 		item.ThreadID = m.Thread.ID
 	}
 	return item
+}
+
+// setAuthorIdentity fills the displayed name and avatar. A webhook message
+// carries its own per-message username and avatar (a Tupperbox character's
+// art); a user's guild nick and guild avatar win over their account-wide ones.
+func setAuthorIdentity(item *dto.MessageItem, m *discordgo.Message, names nameLookup) {
+	u := m.Author
+	if u == nil {
+		return
+	}
+	if m.WebhookID != "" {
+		item.AuthorDisplayName = u.Username
+		item.AuthorAvatarURL = dto.UserAvatarURL(u.ID, u.Avatar, u.Discriminator, 0)
+		return
+	}
+	guildID := m.GuildID
+	ml, _ := names.(memberLookup)
+	if guildID == "" && ml != nil {
+		guildID = ml.channelGuild(m.ChannelID)
+	}
+	var nick, guildAvatar string
+	switch {
+	case m.Member != nil:
+		nick, guildAvatar = m.Member.Nick, m.Member.Avatar
+	case ml != nil && guildID != "":
+		if cm, ok := ml.member(guildID, u.ID); ok {
+			nick, guildAvatar = cm.Nick, cm.GuildAvatar
+		}
+	}
+	item.AuthorDisplayName = dto.DisplayName(nick, u.GlobalName, u.Username)
+	item.AuthorAvatarURL = dto.GuildAvatarURL(guildID, u.ID, guildAvatar, 0)
+	if item.AuthorAvatarURL == "" {
+		item.AuthorAvatarURL = dto.UserAvatarURL(u.ID, u.Avatar, u.Discriminator, 0)
+	}
 }
 
 func toEmbedSummary(e *discordgo.MessageEmbed) dto.EmbedSummary {

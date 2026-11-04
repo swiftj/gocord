@@ -623,6 +623,7 @@ func (c *Client) indexMessage(m *discordgo.Message) {
 		return
 	}
 	c.resolver.noteUser(m.Author)
+	c.noteMessageMember(m)
 	item := toMessageItem(m, c.resolver)
 	c.enqueue(ingestJob{guildID: m.GuildID, parentID: c.resolver.threadParent(m.ChannelID), msg: item})
 }

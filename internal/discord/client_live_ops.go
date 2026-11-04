@@ -367,6 +367,7 @@ func (c *Client) SetChannelPermissions(ctx context.Context, req dto.ChannelPermi
 
 func (c *Client) toItem(m *discordgo.Message) *dto.MessageItem {
 	c.resolver.noteUser(m.Author)
+	c.noteMessageMember(m)
 	it := toMessageItem(m, c.resolver)
 	return &it
 }
@@ -431,10 +432,11 @@ func (c *Client) ReadMessages(ctx context.Context, req dto.ReadMessagesReq) ([]d
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	ms, err := s.ChannelMessages(req.ChannelID, limit, req.Before, req.After, req.Around, discordgo.WithContext(ctx))
+	ms, err := channelMessages(ctx, s, req.ChannelID, limit, req.Before, req.After, req.Around)
 	if err != nil {
 		return nil, mapErr("read messages", err)
 	}
+	c.warmMembers(ctx, ms)
 	out := make([]dto.MessageItem, 0, len(ms))
 	for _, m := range ms {
 		if m != nil {
@@ -586,7 +588,7 @@ func (c *Client) GetPollResults(ctx context.Context, channelID, messageID string
 	if err != nil {
 		return nil, err
 	}
-	m, err := s.ChannelMessage(channelID, messageID, discordgo.WithContext(ctx))
+	m, err := channelMessage(ctx, s, channelID, messageID)
 	if err != nil {
 		return nil, mapErr("get poll", err)
 	}
@@ -693,16 +695,17 @@ func (c *Client) GetForumPost(ctx context.Context, threadID string, limit int) (
 	}
 	d := &dto.ForumPostDetail{Thread: toThreadInfo(th, tags)}
 	// A forum post's starter message shares the thread's ID.
-	if m, err := s.ChannelMessage(threadID, threadID, discordgo.WithContext(ctx)); err == nil {
+	if m, err := channelMessage(ctx, s, threadID, threadID); err == nil {
 		d.Starter = c.toItem(m)
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	ms, err := s.ChannelMessages(threadID, limit, "", "", "", discordgo.WithContext(ctx))
+	ms, err := channelMessages(ctx, s, threadID, limit, "", "", "")
 	if err != nil {
 		return nil, mapErr("read forum post", err)
 	}
+	c.warmMembers(ctx, ms)
 	for i := len(ms) - 1; i >= 0; i-- { // chronological
 		if ms[i] == nil || ms[i].ID == threadID {
 			continue

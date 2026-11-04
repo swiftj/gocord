@@ -6,7 +6,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.dat
 
 BINARY         := bin/discord-mcp
 PLATFORMS      := darwin/arm64 linux/amd64 linux/arm64
-EXPECTED_TOOLS ?= 37
+EXPECTED_TOOLS ?= 44
 
 # JSON-RPC frames for the stdio smoke test (newline-delimited).
 SMOKE_INIT  := {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"make-smoke","version":"0.0.0"}}}

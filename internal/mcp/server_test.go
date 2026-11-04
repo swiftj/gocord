@@ -14,7 +14,8 @@ import (
 	"github.com/local/discord-mcp/internal/policy"
 )
 
-// expectedTools is the public contract from specs/02-mcp-surface.md (28 baseline + 9 next-gen).
+// expectedTools is the public contract: specs/02-mcp-surface.md (28 baseline + 9 next-gen)
+// plus specs/05-media-and-legendkeeper.md (7 media, bridge, and diagnostics tools).
 var expectedTools = []string{
 	// Baseline parity (1–28)
 	"discord_login", "discord_list_servers", "discord_get_server_info", "discord_send",
@@ -29,6 +30,10 @@ var expectedTools = []string{
 	"discord_search_messages", "discord_await_interaction", "discord_persona_register", "discord_persona_send",
 	"discord_create_poll", "discord_get_poll_results", "discord_manage_threads", "discord_manage_events",
 	"discord_governance_audit",
+	// Media, LegendKeeper bridge, and diagnostics (38–44)
+	"discord_get_member_avatar", "discord_fetch_media", "discord_media_to_legendkeeper",
+	"fetch_url_to_legendkeeper", "discord_batch_media_to_legendkeeper", "discord_list_tuppers",
+	"discord_check_access",
 }
 
 func testDeps(t *testing.T) Deps {
@@ -60,7 +65,7 @@ func TestServerRegistersFullSurface(t *testing.T) {
 	sort.Strings(got)
 	want := slices.Clone(expectedTools)
 	sort.Strings(want)
-	if len(want) != 37 {
+	if len(want) != 44 {
 		t.Fatalf("contract list has %d names", len(want))
 	}
 	if !slices.Equal(got, want) {

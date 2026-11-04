@@ -48,6 +48,9 @@ type Service interface {
 	EditMessage(ctx context.Context, channelID, messageID, content string) (*dto.MessageItem, error)
 	DeleteMessage(ctx context.Context, channelID, messageID, reason string) error
 	BulkDeleteMessages(ctx context.Context, channelID string, messageIDs []string, reason string) error
+	// GetMessage re-fetches one message via REST so its signed CDN attachment
+	// URLs are fresh. Added for the media resolver (spec 05).
+	GetMessage(ctx context.Context, channelID, messageID string) (*dto.MessageItem, error)
 
 	// Reactions & Polls
 	AddReaction(ctx context.Context, channelID, messageID, emoji string) error
@@ -67,6 +70,9 @@ type Service interface {
 
 	// Members & Roles
 	ListMembers(ctx context.Context, guildID string, limit int, after string) ([]dto.MemberInfo, error)
+	// GetMember returns one member's profile (avatar hashes, nick, roles).
+	// userID "" means the bot itself. Added for avatars and access checks (spec 05).
+	GetMember(ctx context.Context, guildID, userID string) (*dto.MemberProfile, error)
 	TimeoutMember(ctx context.Context, guildID, userID string, durationSeconds int, reason string) error
 	ListRoles(ctx context.Context, guildID string) ([]dto.RoleInfo, error)
 	CreateRole(ctx context.Context, req dto.RoleMutationReq) (*dto.RoleInfo, error)

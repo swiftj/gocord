@@ -167,7 +167,7 @@ Frontmatter: `name`, `description`, `tools` (explicit comma-separated list), and
   "compatibility": { "platforms": ["darwin", "linux"] }
 }
 ```
-- The `tools` array lists all 37 tools (name + one-line description). `build-dxt.sh` generates it from `bin/discord-mcp --list-tools-json`, a hidden flag Wave 3 adds to `main.go`, so it never drifts.
+- The `tools` array lists all 44 tools (name + one-line description). `build-dxt.sh` generates it from `bin/discord-mcp --list-tools-json`, a hidden flag Wave 3 adds to `main.go`, so it never drifts.
 - `version` is injected at package time.
 
 ### `build-dxt.sh`
@@ -178,5 +178,5 @@ Frontmatter: `name`, `description`, `tools` (explicit comma-separated list), and
 
 ## 8. Docs (`docs/`)
 - `ARCHITECTURE.md`: component diagram (Mermaid) of the MCP transport → tools → policy guard → `discord.Service` → discordgo REST/Gateway → FTS5 index, data flows for search backfill, HITL, and persona send, plus the security model.
-- `TOOL_REFERENCE.md`: all 37 tools with parameter tables and one example call/response each, plus resources and prompts. Generate it from the `--list-tools-json` output where possible.
+- `TOOL_REFERENCE.md`: all 44 tools with parameter tables and one example call/response each, plus resources and prompts. Generate it from the `--list-tools-json` output where possible.
 - All examples use synthetic Snowflakes (`1000000000000000xx`) and placeholder tokens (`YOUR_BOT_TOKEN`).

@@ -1,7 +1,8 @@
 # Tool Reference
 
-`discord-mcp` exposes **37 tools** (28 baseline-parity tools compatible with
-`barryyip0625/mcp-discord` plus 9 differentiating tools), 3 resources, and 3 prompts.
+`discord-mcp` exposes **44 tools** (28 baseline-parity tools compatible with
+`barryyip0625/mcp-discord`, 9 differentiating tools, and 7 media, LegendKeeper, and
+diagnostic tools), 3 resources, and 3 prompts.
 
 Conventions:
 
@@ -53,6 +54,13 @@ Conventions:
 | 35 | [`discord_manage_threads`](#discord_manage_threads) | W/D, DR | Create threads (standalone or from a message), or archive/unarchive/lock/unlock them. |
 | 36 | [`discord_manage_events`](#discord_manage_events) | R/W | List or create guild scheduled events. Start time must be in the future. |
 | 37 | [`discord_governance_audit`](#discord_governance_audit) | R/D, DR | Query audit logs, list AutoMod rules, or time out a member. |
+| 38 | [`discord_get_member_avatar`](#discord_get_member_avatar) | R | A member's account and server avatar URLs and display name. |
+| 39 | [`discord_fetch_media`](#discord_fetch_media) | R | An attachment, author avatar, or allowlisted URL as inline base64, resized and chunked. |
+| 40 | [`discord_media_to_legendkeeper`](#discord_media_to_legendkeeper) | W | Copy an attachment or author avatar into a LegendKeeper asset library. |
+| 41 | [`fetch_url_to_legendkeeper`](#fetch_url_to_legendkeeper) | W | Copy an allowlisted URL into a LegendKeeper asset library. |
+| 42 | [`discord_batch_media_to_legendkeeper`](#discord_batch_media_to_legendkeeper) | W | Up to 25 bridge uploads in one call. |
+| 43 | [`discord_list_tuppers`](#discord_list_tuppers) | R | Webhook (Tupperbox/PluralKit) identities with their latest avatar. |
+| 44 | [`discord_check_access`](#discord_check_access) | R | Effective View/Read History per channel, with a fix for each blocked one. |
 
 ## Baseline parity tools (1–28)
 
@@ -1280,6 +1288,110 @@ Example response (text content):
   "allowed": true
 }
 ```
+
+## Media, LegendKeeper, and diagnostic tools (38–44)
+
+Contract and rules: [specs/05-media-and-legendkeeper.md](../specs/05-media-and-legendkeeper.md).
+
+Message objects returned by every tool now also carry `is_webhook`, `webhook_id`,
+`author_display_name`, and `author_avatar_url`. Attachments add `id`,
+`proxy_url`, `width`, and `height`. Attachment and avatar URLs are signed and
+expire (typically after about 24 hours). Re-resolve them from `channel_id` +
+`message_id`; don't cache them.
+
+**Image source** (fetch and bridge tools): `channel_id` + `message_id` plus
+exactly one of `attachment_index` (0-based), `attachment_id`, or `avatar`; or
+`url` on an allowlisted host.
+
+### discord_get_member_avatar
+
+**#38 · Kind:** R
+
+| Parameter | Type | Required | Notes |
+| :--- | :--- | :-- | :--- |
+| `guild_id` | string | no |  |
+| `user_id` | string | yes |  |
+| `size` | number | no | 128, 256, 512, 1024 (default), 2048, 4096. |
+
+Returns `{user_id, display_name, avatar_url, guild_avatar_url?, animated}`.
+
+### discord_fetch_media
+
+**#39 · Kind:** R
+
+| Parameter | Type | Required | Notes |
+| :--- | :--- | :-- | :--- |
+| image source | — | yes | See above. |
+| `max_dimension` | number | no | Default 1600; 0 keeps the original size. Never upscales. |
+| `format` | string | no | `jpeg` (default), `png`, `webp` (returned as PNG), `original` (untouched bytes). |
+| `quality` | number | no | JPEG quality 1–100, default 85. |
+| `offset`, `length` | number | no | Chunked retrieval of the encoded payload; `length` ≤ 1,000,000. |
+
+Returns `{mime, filename, width, height, total_bytes, offset, length, eof, sha256, base64, hint?}`.
+Payloads over 1,000,000 bytes return the first chunk with `eof: false` and a
+`hint`. Concatenating every chunk reproduces `sha256`.
+
+### discord_media_to_legendkeeper
+
+**#40 · Kind:** W (writes to LegendKeeper; blocked by `--read-only`)
+
+| Parameter | Type | Required | Notes |
+| :--- | :--- | :-- | :--- |
+| `channel_id`, `message_id` | string | yes | Plus one of `attachment_index`, `attachment_id`, `avatar`. |
+| `lk_project` | string | no | Default `LEGENDKEEPER_PROJECT_ID`. |
+| `lk_folder_id` / `lk_folder_path` | string | no | One or the other; a path like `Campaign/Characters` is created if missing. |
+| `name` | string | no | ≤ 120 characters; default is the filename stem. |
+| `description` | string | no |  |
+| `max_dimension`, `format`, `quality` | — | no | Default `0` / `original` (untouched bytes). |
+
+Returns `{asset_id, url, name, width, height, content_type, bytes, folder_id, source_url, project, deduplicated?}`.
+
+```json
+{"name": "discord_media_to_legendkeeper", "arguments": {"channel_id": "100000000000000010", "message_id": "100000000000000150", "avatar": true, "lk_folder_path": "Druskenvald SPG/Characters", "name": "Ser Thaddeus Mournvale"}}
+```
+
+### fetch_url_to_legendkeeper
+
+**#41 · Kind:** W. Same as #40, but the source is `url` (required, allowlisted host).
+
+### discord_batch_media_to_legendkeeper
+
+**#42 · Kind:** W
+
+| Parameter | Type | Required | Notes |
+| :--- | :--- | :-- | :--- |
+| `items` | array | yes | 1–25 objects with the #40 fields. |
+| `lk_project`, `lk_folder_path` | string | no | Defaults applied to items that omit them. |
+| `continue_on_error` | boolean | no | Default `true`. |
+
+Items run sequentially, 250 ms apart. Returns `{results: [{index, ok, asset_id?, url?, deduplicated?, error?}], succeeded, failed}`.
+
+### discord_list_tuppers
+
+**#43 · Kind:** R
+
+| Parameter | Type | Required | Notes |
+| :--- | :--- | :-- | :--- |
+| `guild_id` | string | no |  |
+| `channel_id` | string | no | Channel, forum, or category; includes threads. |
+| `since` | string | no | Snowflake or ISO-8601. |
+| `limit` | number | no | 1–500, default 100. |
+
+Backfills like `discord_search_messages`, then returns
+`{tuppers: [{display_name, avatar_url, webhook_id, last_seen_message_id, last_seen_channel_id, last_seen_at, message_count}], backfilled, warning?}`,
+newest first. Avatar URLs come from each identity's latest message.
+
+### discord_check_access
+
+**#44 · Kind:** R
+
+| Parameter | Type | Required | Notes |
+| :--- | :--- | :-- | :--- |
+| `guild_id` | string | no |  |
+| `channel_ids` | string[] | no | Default: every text, announcement, and forum channel. |
+
+Returns `{channels: [{id, name, category, can_view, can_read_history, missing, fix?}], summary: {readable, blocked}}`.
+Each `fix` names the role and the category (when the channel is synced with it) or channel that needs an overwrite.
 
 ## Resources
 

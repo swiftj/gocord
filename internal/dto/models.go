@@ -76,6 +76,17 @@ type ChannelInfo struct {
 	Position int    `json:"position,omitempty"`
 	Topic    string `json:"topic,omitempty"`
 	NSFW     bool   `json:"nsfw,omitempty"`
+	// Overwrites are the channel's permission overwrites. They feed
+	// discord_check_access and are never serialised into tool output.
+	Overwrites []PermissionOverwrite `json:"-"`
+}
+
+// PermissionOverwrite is one channel permission overwrite. Type is "role" or "member".
+type PermissionOverwrite struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Allow int64  `json:"allow"`
+	Deny  int64  `json:"deny"`
 }
 
 type CreateChannelReq struct {
@@ -121,10 +132,20 @@ type ChannelPermissionReq struct {
 const MaxContentChars = 4000
 
 type MessageItem struct {
-	ID          string          `json:"id"`
-	ChannelID   string          `json:"channel_id,omitempty"`
-	AuthorID    string          `json:"author_id,omitempty"`
-	Author      string          `json:"author,omitempty"`
+	ID        string `json:"id"`
+	ChannelID string `json:"channel_id,omitempty"`
+	AuthorID  string `json:"author_id,omitempty"`
+	Author    string `json:"author,omitempty"`
+	// AuthorDisplayName is the name as displayed: the webhook username for
+	// webhook messages (e.g. a Tupperbox character), else nick > global name > username.
+	AuthorDisplayName string `json:"author_display_name,omitempty"`
+	// AuthorAvatarURL is the avatar as displayed (see AvatarURL). Like
+	// attachment URLs it is a CDN URL; re-resolve it rather than cache it.
+	AuthorAvatarURL string `json:"author_avatar_url,omitempty"`
+	// IsWebhook is true when the message was posted through a webhook
+	// (Tupperbox, PluralKit, persona webhooks).
+	IsWebhook   bool            `json:"is_webhook"`
+	WebhookID   string          `json:"webhook_id,omitempty"`
 	Content     string          `json:"content,omitempty"`
 	Timestamp   string          `json:"timestamp,omitempty"`
 	EditedAt    string          `json:"edited_at,omitempty"`
@@ -135,11 +156,18 @@ type MessageItem struct {
 	ThreadID    string          `json:"thread_id,omitempty"`
 }
 
+// AttachmentRef is one message attachment. URL and ProxyURL are signed Discord
+// CDN URLs (?ex=&is=&hm=) that expire, typically after about 24 hours:
+// re-resolve them from channel_id + message_id instead of caching them.
 type AttachmentRef struct {
+	ID          string `json:"id,omitempty"`
 	Filename    string `json:"filename"`
 	URL         string `json:"url,omitempty"`
+	ProxyURL    string `json:"proxy_url,omitempty"`
 	Size        int    `json:"size,omitempty"`
 	ContentType string `json:"content_type,omitempty"`
+	Width       int    `json:"width,omitempty"`
+	Height      int    `json:"height,omitempty"`
 }
 
 type ReactionCount struct {
