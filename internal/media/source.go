@@ -1,5 +1,5 @@
 // Package media resolves and downloads images referenced by Discord messages
-// (attachments, author avatars) or by allowlisted URLs, and optionally resizes
+// (attachments, author avatars) or by http(s) URLs, and optionally resizes
 // and re-encodes them in pure Go, then optionally saves them under a local
 // media root (Store). It backs discord_fetch_media and the local-file tools.
 // See specs/05-media-and-local-files.md.
@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 )
@@ -22,7 +21,7 @@ type Source struct {
 	AttachmentIndex      *int   // nth (0-based) attachment of the message
 	AttachmentID         string // or the attachment with this ID
 	Avatar               bool   // the message author's avatar (a Tupper's art for webhook messages)
-	URL                  string // an allowlisted http(s) URL
+	URL                  string // any public http(s) URL
 }
 
 // ErrInvalidSource reports a Source that does not name exactly one image.
@@ -77,63 +76,11 @@ func (s Source) Key() string {
 	return ""
 }
 
-// DefaultAllowedHosts are the hosts a URL source may point at. Entries are an
-// exact host, "*.suffix" (any subdomain), or a glob within the host
-// ("images-ext-*.discordapp.net").
-var DefaultAllowedHosts = []string{
-	"cdn.discordapp.com",
-	"media.discordapp.net",
-	"images-ext-*.discordapp.net",
-	"*.magnific.com",
-	"cdn.magnific.com",
-	"*.freepik.com",
-	"assets.legendkeeper.com",
-}
-
-// discordHosts are the CDN hosts that serve Discord media.
-var discordHosts = []string{"cdn.discordapp.com", "media.discordapp.net", "images-ext-*.discordapp.net"}
-
-// ParseHostList splits a comma-separated GOCORD_MEDIA_ALLOWED_HOSTS value.
-func ParseHostList(v string) []string {
-	var out []string
-	for h := range strings.SplitSeq(v, ",") {
-		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
-			out = append(out, h)
-		}
-	}
-	return out
-}
-
-// HostAllowed reports whether host matches any pattern.
-func HostAllowed(host string, patterns []string) bool {
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	if host == "" {
-		return false
-	}
-	for _, p := range patterns {
-		p = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(p)), ".")
-		switch {
-		case p == "":
-		case strings.HasPrefix(p, "*."):
-			if strings.HasSuffix(host, p[1:]) && len(host) > len(p)-1 {
-				return true
-			}
-		case strings.Contains(p, "*"):
-			if ok, err := path.Match(p, host); err == nil && ok {
-				return true
-			}
-		case p == host:
-			return true
-		}
-	}
-	return false
-}
-
-// IsDiscordHost reports whether host is a Discord CDN host.
-func IsDiscordHost(host string) bool { return HostAllowed(host, discordHosts) }
-
-// CheckURL validates an http(s) URL against the allowlist and returns it parsed.
-func CheckURL(raw string, allowed []string) (*url.URL, error) {
+// CheckURL validates an http(s) URL source and returns it parsed. Any host is
+// accepted except an IP literal on a loopback, private, link-local, or other
+// non-public network; host names are checked against the same rule at connect
+// time (see publicDialer), after DNS resolution.
+func CheckURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil, fmt.Errorf("%w: url: %v", ErrInvalidSource, err)
@@ -145,9 +92,21 @@ func CheckURL(raw string, allowed []string) (*url.URL, error) {
 		return nil, fmt.Errorf("%w: url must not contain credentials", ErrInvalidSource)
 	}
 	host := u.Hostname()
-	if net.ParseIP(host) != nil || !HostAllowed(host, allowed) {
-		return nil, fmt.Errorf("%w: host %q is not allowed; allowed hosts: %s (extend with GOCORD_MEDIA_ALLOWED_HOSTS)",
-			ErrInvalidSource, host, strings.Join(allowed, ", "))
+	if host == "" {
+		return nil, fmt.Errorf("%w: url has no host", ErrInvalidSource)
+	}
+	if ip := net.ParseIP(host); ip != nil && !IsPublicIP(ip) {
+		return nil, fmt.Errorf("%w: %s is a local or private network address", ErrInvalidSource, host)
 	}
 	return u, nil
+}
+
+// cgnat is the carrier-grade NAT range (100.64.0.0/10), not covered by IsPrivate.
+var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
+// IsPublicIP reports whether ip is a globally routable unicast address.
+func IsPublicIP(ip net.IP) bool {
+	local := ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || cgnat.Contains(ip)
+	return !local
 }

@@ -57,15 +57,16 @@ the new columns. `Store.ListWebhookAuthors` groups webhook messages by
 `MessageID`. `Fetcher.Resolve` and `Fetcher.Fetch` work like this:
 
 - Message sources are always re-fetched with `GetMessage`.
-- URL sources must be http(s), carry no userinfo, and not be an IP literal. The
-  host must match the allowlist: `cdn.discordapp.com`, `media.discordapp.net`,
-  `images-ext-*.discordapp.net`, `*.magnific.com`, `cdn.magnific.com`,
-  `*.freepik.com`, `assets.legendkeeper.com`, plus `GOCORD_MEDIA_ALLOWED_HOSTS`
-  (comma-separated; `*.suffix` and in-label globs). The rejection error lists the
-  allowed hosts.
+- URL sources must be http(s) and carry no userinfo. **There is no host
+  allowlist** (removed by owner decision): any public host is accepted.
+  Connections to loopback, private (RFC 1918 / ULA), link-local, CGNAT,
+  multicast, or unspecified addresses are refused. IP literals are checked in
+  `CheckURL`; host names are checked at dial time on the resolved IP
+  (`net.Dialer.Control`), which also defeats DNS rebinding. Proxies are not
+  used for media downloads.
 - Downloads are capped at 25 MB (`GOCORD_MEDIA_MAX_BYTES`), time out after 30 s,
   and follow at most 5 redirects. Every redirect hop is re-checked against the
-  allowlist. No credentials are ever sent, and errors name the host, never the
+  same rule. No credentials are ever sent, and errors name the host, never the
   signed URL.
 - The type is sniffed from the bytes (`http.DetectContentType`). Only PNG, JPEG,
   GIF, and WebP are accepted. Dimensions come from the stdlib decoders plus
@@ -87,7 +88,7 @@ the new columns. `Store.ListWebhookAuthors` groups webhook messages by
 | :-- | :--- | :-- | :--- |
 | 38 | `discord_get_member_avatar` | R | `{guild_id?, user_id, size?∈128…4096}` → `{user_id, display_name, avatar_url, guild_avatar_url?, animated}` |
 | 39 | `discord_fetch_media` | R / local write | Inline base64 (chunked), or `save_to` a file. See §3.1. |
-| 40 | `fetch_url_to_file` | local write | Allowlisted URL → file. See §3.2. |
+| 40 | `fetch_url_to_file` | local write | Public URL → file. See §3.2. |
 | 41 | `discord_batch_fetch_media` | local write | 1–25 message sources → files, sequential, 250 ms apart. |
 | 42 | `media_list_files` | R | Files under the media root. |
 | 43 | `discord_list_tuppers` | R | Webhook identities with their latest avatar. |

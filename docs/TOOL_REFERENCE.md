@@ -55,8 +55,8 @@ Conventions:
 | 36 | [`discord_manage_events`](#discord_manage_events) | R/W | List or create guild scheduled events. Start time must be in the future. |
 | 37 | [`discord_governance_audit`](#discord_governance_audit) | R/D, DR | Query audit logs, list AutoMod rules, or time out a member. |
 | 38 | [`discord_get_member_avatar`](#discord_get_member_avatar) | R | A member's account and server avatar URLs and display name. |
-| 39 | [`discord_fetch_media`](#discord_fetch_media) | R / local W | An attachment, author avatar, or allowlisted URL as inline base64 (resized, chunked), or saved to a file with `save_to`. |
-| 40 | [`fetch_url_to_file`](#fetch_url_to_file) | local W | Save an allowlisted URL under the local media root. |
+| 39 | [`discord_fetch_media`](#discord_fetch_media) | R / local W | An attachment, author avatar, or public URL as inline base64 (resized, chunked), or saved to a file with `save_to`. |
+| 40 | [`fetch_url_to_file`](#fetch_url_to_file) | local W | Save a public URL under the local media root. |
 | 41 | [`discord_batch_fetch_media`](#discord_batch_fetch_media) | local W | Save up to 25 attachments/avatars in one call. |
 | 42 | [`media_list_files`](#media_list_files) | R | List files under the local media root. |
 | 43 | [`discord_list_tuppers`](#discord_list_tuppers) | R | Webhook (Tupperbox/PluralKit) identities with their latest avatar. |
@@ -1300,8 +1300,8 @@ expire (typically after about 24 hours). Re-resolve them from `channel_id` +
 `message_id`; don't cache them.
 
 **Image source:** `channel_id` + `message_id` plus exactly one of
-`attachment_index` (0-based), `attachment_id`, or `avatar`; or `url` on an
-allowlisted host.
+`attachment_index` (0-based), `attachment_id`, or `avatar`; or any public
+http(s) `url` (local and private network addresses are refused).
 
 **Saving:**
 

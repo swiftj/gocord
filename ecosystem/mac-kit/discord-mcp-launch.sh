@@ -5,7 +5,7 @@
 # Placeholders a host left unsubstituted ("${user_config.x}") count as unset.
 # Never writes to stdout: stdio JSON-RPC runs over it.
 for v in DISCORD_BOT_TOKEN DISCORD_MCP_DEFAULT_GUILD_ID DISCORD_MCP_DB_PATH DISCORD_MCP_READ_ONLY \
-  GOCORD_MEDIA_DIR GOCORD_MEDIA_ALLOWED_HOSTS; do
+  GOCORD_MEDIA_DIR; do
   eval "val=\${$v:-}"
   case "$val" in ''|'${'*) unset "$v" ;; esac
 done

@@ -43,7 +43,7 @@ func RegisterMediaTools(s *server.MCPServer, d deps.Deps) {
 	), mediaAvatarHandler(d))
 
 	s.AddTool(blTool(mediaToolFetch,
-		"Download an image (a message attachment, a message author's avatar, or an allowlisted URL), resized and re-encoded. "+
+		"Download an image (a message attachment, a message author's avatar, or any public http(s) URL), resized and re-encoded. "+
 			"Returns it inline as base64 (chunked via offset/length over 1,000,000 bytes), or with save_to writes it under the local media root and returns the path.",
 		mediaSaveAnnotations(),
 		append(mediaSourceParams(false),
@@ -79,7 +79,7 @@ func mediaSourceParams(messageRequired bool) []mcp.ToolOption {
 	}
 	if !messageRequired {
 		params = append(params, mcp.WithString("url",
-			mcp.Description("Direct image URL on an allowlisted host, instead of a message source.")))
+			mcp.Description("Direct http(s) image URL, instead of a message source.")))
 	}
 	return params
 }

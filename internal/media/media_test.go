@@ -52,57 +52,52 @@ func TestSourceValidate(t *testing.T) {
 	}
 }
 
-func TestHostAllowed(t *testing.T) {
-	extra := ParseHostList(" *.Example.org , images.test ,")
-	allow := append(append([]string{}, DefaultAllowedHosts...), extra...)
-	tests := []struct {
-		host string
-		want bool
-	}{
-		{"cdn.discordapp.com", true},
-		{"CDN.DiscordApp.com.", true},
-		{"media.discordapp.net", true},
-		{"images-ext-1.discordapp.net", true},
-		{"images-ext-2.discordapp.net", true},
-		{"images.discordapp.net", false},
-		{"img.magnific.com", true},
-		{"cdn.magnific.com", true},
-		{"magnific.com", false},
-		{"img-c.freepik.com", true},
-		{"evilfreepik.com", false},
-		{"freepik.com.evil.io", false},
-		{"assets.legendkeeper.com", true},
-		{"legendkeeper.com", false},
-		{"a.b.example.org", true},
-		{"example.org", false},
-		{"images.test", true},
-		{"discordapp.com", false},
-		{"", false},
+func TestCheckURL(t *testing.T) {
+	for _, raw := range []string{
+		"https://cdn.discordapp.com/attachments/1/2/a.png?ex=1&is=2&hm=3",
+		"https://pikaso.cdnpk.net/private/production/1/render.png",
+		"https://img.magnific.com/a.png",
+		"http://example.com/a.png",
+		"https://8.8.8.8/a.png", // a public IP literal
+	} {
+		if _, err := CheckURL(raw); err != nil {
+			t.Errorf("CheckURL(%q) rejected a public URL: %v", raw, err)
+		}
 	}
-	for _, tt := range tests {
-		if got := HostAllowed(tt.host, allow); got != tt.want {
-			t.Errorf("HostAllowed(%q) = %v, want %v", tt.host, got, tt.want)
+	for _, raw := range []string{
+		"ftp://cdn.discordapp.com/a.png",
+		"file:///etc/passwd",
+		"https://user:pw@cdn.discordapp.com/a.png",
+		"https:///a.png",
+		"http://127.0.0.1/a.png",
+		"http://[::1]/a.png",
+		"http://10.0.0.5/a.png",
+		"http://192.168.1.1/a.png",
+		"http://169.254.169.254/latest/meta-data",
+		"http://100.64.0.1/a.png",
+		"http://0.0.0.0/a.png",
+	} {
+		if _, err := CheckURL(raw); !errors.Is(err, ErrInvalidSource) {
+			t.Errorf("CheckURL(%q) = %v, want ErrInvalidSource", raw, err)
 		}
 	}
 }
 
-func TestCheckURL(t *testing.T) {
-	for _, raw := range []string{
-		"ftp://cdn.discordapp.com/a.png",
-		"https://user:pw@cdn.discordapp.com/a.png",
-		"https://127.0.0.1/a.png",
-		"https://example.com/a.png",
-	} {
-		if _, err := CheckURL(raw, DefaultAllowedHosts); err == nil {
-			t.Errorf("CheckURL(%q) accepted a disallowed URL", raw)
+func TestPublicDialerRefusesLocalAddresses(t *testing.T) {
+	// A host *name* that resolves to loopback passes CheckURL, so the dialer
+	// itself must refuse it (this also covers DNS rebinding).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(pngBytes(t, 2, 2)) }))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	f := New(nil, Config{Timeout: 5 * time.Second})
+	_, err := f.Fetch(context.Background(), Source{URL: "http://localhost:" + u.Port() + "/a.png"}, FetchOptions{})
+	if err == nil || !strings.Contains(err.Error(), "local or private address") {
+		t.Fatalf("fetch from localhost = %v, want a refusal", err)
+	}
+	for addr, ok := range map[string]bool{"8.8.8.8:443": true, "127.0.0.1:80": false, "[::1]:80": false, "10.1.2.3:443": false, "[fe80::1]:80": false} {
+		if err := publicDialControl("tcp", addr, nil); (err == nil) != ok {
+			t.Errorf("publicDialControl(%s) = %v, want allowed=%v", addr, err, ok)
 		}
-	}
-	_, err := CheckURL("https://example.com/a.png", DefaultAllowedHosts)
-	if err == nil || !strings.Contains(err.Error(), "cdn.discordapp.com") {
-		t.Errorf("rejection should list the allowed hosts, got %v", err)
-	}
-	if _, err := CheckURL("https://cdn.discordapp.com/attachments/1/2/a.png?ex=1&is=2&hm=3", DefaultAllowedHosts); err != nil {
-		t.Errorf("signed CDN URL rejected: %v", err)
 	}
 }
 
@@ -314,7 +309,7 @@ func TestFetcher(t *testing.T) {
 			w.Header().Set("Content-Type", "application/octet-stream") // header lies; bytes are sniffed
 			_, _ = w.Write(art)
 		case "/redirect":
-			http.Redirect(w, r, "https://example.com/elsewhere.png", http.StatusFound)
+			http.Redirect(w, r, "http://169.254.169.254/latest/meta-data", http.StatusFound)
 		case "/page.html":
 			_, _ = w.Write([]byte("<html><body>not an image</body></html>"))
 		default:
@@ -357,8 +352,8 @@ func TestFetcher(t *testing.T) {
 		t.Fatalf("index out of range: %v", err)
 	}
 	if _, err := f.Fetch(ctx, Source{URL: "https://cdn.discordapp.com/redirect"}, FetchOptions{}); err == nil ||
-		!strings.Contains(err.Error(), "not allowed") {
-		t.Fatalf("redirect to a disallowed host must fail: %v", err)
+		!strings.Contains(err.Error(), "private network address") {
+		t.Fatalf("redirect to a private address must fail: %v", err)
 	}
 	if _, err := f.Fetch(ctx, Source{URL: "https://cdn.discordapp.com/page.html"}, FetchOptions{}); !errors.Is(err, ErrUnsupportedType) {
 		t.Fatalf("html must be rejected by sniffing: %v", err)

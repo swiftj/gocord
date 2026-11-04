@@ -59,7 +59,6 @@ Flags (each also settable via the env var shown):
 Media (environment only):
   GOCORD_MEDIA_DIR            root for saved images (default ~/Downloads/gocord)
   GOCORD_MEDIA_ALLOW_ABSOLUTE allow absolute save_to paths outside the root (default false)
-  GOCORD_MEDIA_ALLOWED_HOSTS  extra image hosts, comma-separated ("*.example.com" allowed)
   GOCORD_MEDIA_MAX_BYTES      download cap (default 26214400, 25 MB)
 
 The MessageContent and GuildMembers privileged intents must be enabled for the
@@ -118,7 +117,7 @@ func run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 
 	s, notifier := mcp.New(mcp.Deps{
 		Discord: client, Store: store, Guard: policy.New(cfg), Config: cfg, Logger: logger,
-		Media:      media.New(client, media.Config{ExtraHosts: cfg.MediaAllowedHosts, MaxBytes: cfg.MediaMaxBytes, Logger: logger}),
+		Media:      media.New(client, media.Config{MaxBytes: cfg.MediaMaxBytes, Logger: logger}),
 		MediaStore: media.NewStore(cfg.MediaDir, cfg.MediaAllowAbsolute),
 	}, version)
 	client.OnEvent(notifier.HandleEvent) // resource subscriptions (spec 02 §4)

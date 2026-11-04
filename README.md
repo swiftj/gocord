@@ -147,7 +147,6 @@ Precedence: **flag > env > config file > default**. See [.env.example](.env.exam
 | `--default-guild` | `DISCORD_MCP_DEFAULT_GUILD_ID` | — | Used when a tool omits `guild_id` |
 | `--log-level` | `DISCORD_MCP_LOG_LEVEL` | `info` | Logs go to stderr only |
 | `--version` | — | — | Prints version, commit, and build date |
-| — | `GOCORD_MEDIA_ALLOWED_HOSTS` | — | Extra image hosts for media tools (comma-separated, `*.example.com` allowed) |
 | — | `GOCORD_MEDIA_MAX_BYTES` | `26214400` | Download cap for media tools (25 MB) |
 | — | `GOCORD_MEDIA_DIR` | `~/Downloads/gocord` | Root that `save_to` paths resolve under |
 | — | `GOCORD_MEDIA_ALLOW_ABSOLUTE` | `false` | Allow absolute `save_to` paths outside the media root |
@@ -209,11 +208,11 @@ gocord never talks to the LegendKeeper API itself. Full contract:
 [specs/05](specs/05-media-and-local-files.md).
 
 1. **Inline bytes:** `discord_fetch_media` returns an attachment, a message
-   author's avatar, or an allowlisted URL as base64. By default it resizes to
+   author's avatar, or any public http(s) URL as base64. By default it resizes to
    1600 px and encodes as JPEG. Payloads over 1,000,000 bytes are paged with
    `offset`/`length`, and every chunk carries the same `sha256`.
 2. **Save to disk:** add `save_to` to `discord_fetch_media`, or use
-   `fetch_url_to_file` (any allowlisted URL, such as a Magnific render) or
+   `fetch_url_to_file` (any public URL, such as a Magnific render) or
    `discord_batch_fetch_media` (up to 25 items). The file goes under the media
    root and the result reports its absolute `path`. `media_list_files` shows
    what is there.
@@ -237,13 +236,15 @@ gocord never talks to the LegendKeeper API itself. Full contract:
 
 **Limits and safety**
 
-- URL sources must be on an allowlisted host: `cdn.discordapp.com`,
-  `media.discordapp.net`, `images-ext-*.discordapp.net`, `*.magnific.com`,
-  `*.freepik.com`, `assets.legendkeeper.com`, plus `GOCORD_MEDIA_ALLOWED_HOSTS`.
+- There is no host allowlist: any public http(s) URL works. gocord refuses
+  only local and private network addresses (loopback, `10.x`, `192.168.x`,
+  link-local such as `169.254.169.254`, and similar). That check runs on the
+  resolved IP, so a host name can't point a download at your own machine or
+  network.
 - Downloads:
   - are capped at 25 MB (`GOCORD_MEDIA_MAX_BYTES`);
   - time out after 30 s;
-  - follow at most 5 redirects, each re-checked against the allowlist;
+  - follow at most 5 redirects, each re-checked against the same rule;
   - never send credentials.
 - The image type is sniffed from the bytes: only PNG, JPEG, GIF, and WebP are
   accepted.

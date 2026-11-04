@@ -26,10 +26,10 @@ var mediaBatchGap = 250 * time.Millisecond
 
 func registerMediaFileTools(s *server.MCPServer, d deps.Deps) {
 	s.AddTool(blTool(mediaToolURLFile,
-		"Download an image from an allowlisted URL (Magnific, Freepik, Discord CDN, LegendKeeper assets, GOCORD_MEDIA_ALLOWED_HOSTS) and save it under the local media root.",
+		"Download an image from any public http(s) URL (e.g. a Magnific or Freepik render, the Discord CDN, LegendKeeper assets) and save it under the local media root.",
 		mediaSaveAnnotations(),
 		append([]mcp.ToolOption{
-			mcp.WithString("url", mcp.Required(), mcp.Description("Direct image URL on an allowlisted host.")),
+			mcp.WithString("url", mcp.Required(), mcp.Description("Direct http(s) image URL.")),
 			mediaSaveToParam(true), mediaOverwriteParam(),
 		}, mediaTransformParams()...)...,
 	), mediaURLFileHandler(d))

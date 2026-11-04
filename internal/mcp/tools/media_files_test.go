@@ -93,7 +93,7 @@ func TestFetchURLToFile(t *testing.T) {
 		t.Fatalf("url save = %+v (source %q)", out.Saved, out.SourceURL)
 	}
 	for name, a := range map[string]map[string]any{
-		"disallowed host": {"url": "https://example.com/a.png", "save_to": "a.png"},
+		"private address": {"url": "http://10.0.0.1/a.png", "save_to": "a.png"},
 		"missing save_to": {"url": mtCDN + "/render/4k.png"},
 		"missing url":     {"save_to": "a.png"},
 	} {

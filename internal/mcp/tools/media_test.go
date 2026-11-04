@@ -163,12 +163,12 @@ func TestFetchMediaDefaultsAndValidation(t *testing.T) {
 	}
 
 	for name, a := range map[string]map[string]any{
-		"two selectors":  {"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "avatar": true, "attachment_index": 0},
-		"no selector":    {"channel_id": discord.MockGeneralID, "message_id": mtArtMsg},
-		"bad host":       {"url": "https://example.com/x.png"},
-		"bad format":     {"url": mtCDN + "/x.png", "format": "tiff"},
-		"bad length":     {"url": mtCDN + "/x.png", "length": mediaMaxChunk + 1},
-		"index too high": {"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "attachment_index": 4},
+		"two selectors":   {"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "avatar": true, "attachment_index": 0},
+		"no selector":     {"channel_id": discord.MockGeneralID, "message_id": mtArtMsg},
+		"private address": {"url": "http://192.168.1.1/x.png"},
+		"bad format":      {"url": mtCDN + "/x.png", "format": "tiff"},
+		"bad length":      {"url": mtCDN + "/x.png", "length": mediaMaxChunk + 1},
+		"index too high":  {"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "attachment_index": 4},
 	} {
 		if res := callTool(t, s, mediaToolFetch, a); !res.IsError {
 			t.Errorf("%s: expected a tool error", name)

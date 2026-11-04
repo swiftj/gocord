@@ -93,7 +93,6 @@ func TestExpandHome(t *testing.T) {
 func TestMediaEnv(t *testing.T) {
 	env := map[string]string{
 		"HOME":                        "/Users/test",
-		"GOCORD_MEDIA_ALLOWED_HOSTS":  "*.example.com, img.test",
 		"GOCORD_MEDIA_MAX_BYTES":      "1048576",
 		"GOCORD_MEDIA_ALLOW_ABSOLUTE": "${user_config.media_allow_absolute}", // unsubstituted placeholder
 	}
@@ -102,7 +101,7 @@ func TestMediaEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.MediaAllowedHosts) != 2 || c.MediaMaxBytes != 1<<20 || c.MediaAllowAbsolute ||
+	if c.MediaMaxBytes != 1<<20 || c.MediaAllowAbsolute ||
 		c.MediaDir != "/Users/test/Downloads/gocord" {
 		t.Fatalf("config = %+v", c)
 	}

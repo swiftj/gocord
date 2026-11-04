@@ -5,7 +5,8 @@
 ### Added
 
 - **Media access:** `discord_fetch_media` returns attachments, author avatars, or
-  allowlisted URLs inline as base64. It resizes in pure Go, re-encodes to JPEG or
+  any public http(s) URL inline as base64. There is no host allowlist; only
+  local and private network addresses are refused. It resizes in pure Go, re-encodes to JPEG or
   PNG, and pages payloads over 1 MB with a stable `sha256`.
   `discord_get_member_avatar` returns a member's account and server avatars.
 - **Save media to disk:** `discord_fetch_media` takes `save_to`/`overwrite`.
@@ -22,8 +23,7 @@
   characters with their latest art.
 - **Diagnostics:** `discord_check_access` computes the bot's View/Read History
   access per channel and suggests a fix for each blocked one.
-- The Desktop extension has optional "Saved Images Folder" and
-  extra-image-host fields.
+- The Desktop extension has an optional "Saved Images Folder" field.
 
 ### Changed
 

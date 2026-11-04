@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/local/discord-mcp/internal/dto"
@@ -21,7 +23,6 @@ const (
 	DefaultTimeout   = 30 * time.Second
 	MaxRedirects     = 5
 	DefaultQuality   = 85
-	EnvAllowedHosts  = "GOCORD_MEDIA_ALLOWED_HOSTS"
 	EnvMaxBytes      = "GOCORD_MEDIA_MAX_BYTES"
 	defaultUserAgent = "gocord-media/1"
 )
@@ -39,11 +40,10 @@ type MessageGetter interface {
 
 // Config tunes a Fetcher. Zero values take the defaults.
 type Config struct {
-	// ExtraHosts are appended to DefaultAllowedHosts (GOCORD_MEDIA_ALLOWED_HOSTS).
-	ExtraHosts []string
-	MaxBytes   int64
-	Timeout    time.Duration
+	MaxBytes int64
+	Timeout  time.Duration
 	// HTTPClient overrides the transport (tests). Its CheckRedirect is replaced.
+	// Without it, connections go through publicDialer.
 	HTTPClient *http.Client
 	Logger     *slog.Logger
 }
@@ -52,7 +52,6 @@ type Config struct {
 type Fetcher struct {
 	msgs     MessageGetter
 	hc       *http.Client
-	allowed  []string
 	maxBytes int64
 	timeout  time.Duration
 	log      *slog.Logger
@@ -63,7 +62,6 @@ type Fetcher struct {
 func New(msgs MessageGetter, cfg Config) *Fetcher {
 	f := &Fetcher{
 		msgs:     msgs,
-		allowed:  append(append([]string{}, DefaultAllowedHosts...), cfg.ExtraHosts...),
 		maxBytes: cfg.MaxBytes,
 		timeout:  cfg.Timeout,
 		log:      cfg.Logger,
@@ -78,7 +76,7 @@ func New(msgs MessageGetter, cfg Config) *Fetcher {
 	if f.log == nil {
 		f.log = slog.Default()
 	}
-	hc := &http.Client{}
+	hc := &http.Client{Transport: publicTransport()}
 	if cfg.HTTPClient != nil {
 		*hc = *cfg.HTTPClient
 	}
@@ -86,7 +84,7 @@ func New(msgs MessageGetter, cfg Config) *Fetcher {
 		if len(via) >= MaxRedirects {
 			return fmt.Errorf("stopped after %d redirects", MaxRedirects)
 		}
-		if _, err := CheckURL(req.URL.String(), f.allowed); err != nil {
+		if _, err := CheckURL(req.URL.String()); err != nil {
 			return fmt.Errorf("redirect: %w", err)
 		}
 		req.Header.Del("Authorization")
@@ -96,9 +94,6 @@ func New(msgs MessageGetter, cfg Config) *Fetcher {
 	f.hc = hc
 	return f
 }
-
-// AllowedHosts returns the effective allowlist.
-func (f *Fetcher) AllowedHosts() []string { return append([]string{}, f.allowed...) }
 
 // MaxBytes returns the download cap.
 func (f *Fetcher) MaxBytes() int64 { return f.maxBytes }
@@ -110,7 +105,7 @@ func (f *Fetcher) Resolve(ctx context.Context, s Source) (string, string, error)
 		return "", "", err
 	}
 	if s.URL != "" {
-		u, err := CheckURL(s.URL, f.allowed)
+		u, err := CheckURL(s.URL)
 		if err != nil {
 			return "", "", err
 		}
@@ -168,7 +163,7 @@ func (f *Fetcher) Fetch(ctx context.Context, s Source, opts FetchOptions) (*Fetc
 	if err != nil {
 		return nil, err
 	}
-	u, err := CheckURL(raw, f.allowed)
+	u, err := CheckURL(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +232,29 @@ func (f *Fetcher) download(ctx context.Context, u *url.URL) ([]byte, error) {
 		return nil, fmt.Errorf("%w: exceeds the %d-byte limit (%s)", ErrTooLarge, f.maxBytes, EnvMaxBytes)
 	}
 	return b, nil
+}
+
+// publicTransport dials only public addresses: the check runs on the resolved
+// IP, so a host name that resolves to a local or private address (including
+// via DNS rebinding) is refused. Proxies are not used, since the check would
+// then apply to the proxy instead of the destination.
+func publicTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = nil
+	d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second, Control: publicDialControl}
+	t.DialContext = d.DialContext
+	return t
+}
+
+func publicDialControl(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidSource, err)
+	}
+	if ip := net.ParseIP(host); ip == nil || !IsPublicIP(ip) {
+		return fmt.Errorf("%w: refusing to connect to local or private address %s", ErrInvalidSource, host)
+	}
+	return nil
 }
 
 func filenameFromURL(u *url.URL) string {

@@ -51,9 +51,8 @@ type Config struct {
 	ShowVersion     bool
 	ListToolsJSON   bool // hidden: print tool list as JSON (used by build-dxt.sh)
 
-	// Media (env only): extra allowed hosts and the download cap in bytes (0 = default).
-	MediaAllowedHosts []string
-	MediaMaxBytes     int64
+	// Media (env only): the download cap in bytes (0 = default).
+	MediaMaxBytes int64
 	// MediaDir is the root that save_to paths resolve under (GOCORD_MEDIA_DIR,
 	// default ~/Downloads/gocord). MediaAllowAbsolute permits absolute save_to
 	// paths outside it (GOCORD_MEDIA_ALLOW_ABSOLUTE).
@@ -185,7 +184,6 @@ func Load(args []string, getenv func(string) string) (*Config, error) {
 		}
 		return v
 	}
-	c.MediaAllowedHosts = splitList(env("GOCORD_MEDIA_ALLOWED_HOSTS"))
 	if v := env("GOCORD_MEDIA_MAX_BYTES"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n <= 0 {
