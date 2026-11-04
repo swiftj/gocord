@@ -2,28 +2,22 @@ package tools
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"image"
 	"image/color"
 	"image/png"
-	"log/slog"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/swiftj/golk/lk"
 
 	"github.com/local/discord-mcp/internal/config"
 	"github.com/local/discord-mcp/internal/discord"
 	"github.com/local/discord-mcp/internal/dto"
-	"github.com/local/discord-mcp/internal/lkbridge"
 	"github.com/local/discord-mcp/internal/mcp/deps"
 	"github.com/local/discord-mcp/internal/media"
 )
@@ -210,133 +204,4 @@ func TestGetMemberAvatar(t *testing.T) {
 	if res := callTool(t, s, mediaToolAvatar, map[string]any{"user_id": "@alice", "size": 300}); !res.IsError {
 		t.Fatal("size 300 must be rejected")
 	}
-}
-
-// ---------- LegendKeeper bridge ----------
-
-// mtLK is an in-memory lkbridge.Assets.
-type mtLK struct {
-	uploads []lk.UploadImageParams
-	folders []lk.Asset
-	fail    map[string]bool // upload name -> fail
-}
-
-func (f *mtLK) List(_ context.Context, p lk.AssetListParams, _ ...lk.CallOption) (*lk.Page[lk.Asset], error) {
-	var items []lk.Asset
-	for _, a := range f.folders {
-		if a.FolderID == p.FolderID {
-			items = append(items, a)
-		}
-	}
-	return &lk.Page[lk.Asset]{Items: items}, nil
-}
-
-func (f *mtLK) CreateFolder(_ context.Context, c lk.AssetFolderCreate, _ ...lk.CallOption) (*lk.Asset, error) {
-	a := lk.Asset{ID: "folder-" + c.Name, Name: c.Name, Type: lk.AssetFolder, FolderID: c.FolderID.Or("")}
-	f.folders = append(f.folders, a)
-	return &a, nil
-}
-
-func (f *mtLK) UploadImage(_ context.Context, p lk.UploadImageParams, _ ...lk.CallOption) (*lk.Asset, error) {
-	if f.fail[p.Name] {
-		return nil, &lk.UploadError{Status: 413, Body: "too big"}
-	}
-	f.uploads = append(f.uploads, p)
-	id := "img-" + p.Name
-	return &lk.Asset{ID: id, Name: p.Name, Type: lk.AssetImage, URL: "https://assets.legendkeeper.com/" + id, FolderID: p.FolderID.Or("")}, nil
-}
-
-func TestLegendKeeperBridgeTools(t *testing.T) {
-	lkBatchGap = 0
-	t.Cleanup(func() { lkBatchGap = 250 * time.Millisecond })
-	avatar := mtSmallPNG(t)
-	files := map[string][]byte{"/avatars/" + mtHook + "/abc.png": avatar, "/attachments/1/2/big-map.png": mtNoisyPNG(t, 64, 64)}
-
-	t.Run("not configured", func(t *testing.T) {
-		d, _ := mtSetup(t, nil, files)
-		s := newTestServer(t, d, RegisterLegendKeeperTools)
-		for _, tool := range []string{lkToolMessage, lkToolURL, lkToolBatch} {
-			res := callTool(t, s, tool, map[string]any{})
-			if !res.IsError || !strings.Contains(resultText(t, res), "LegendKeeper not configured") {
-				t.Errorf("%s: %s", tool, resultText(t, res))
-			}
-		}
-	})
-
-	fake := &mtLK{fail: map[string]bool{"broken": true}}
-	d, _ := mtSetup(t, nil, files)
-	b, err := lkbridge.New(lkbridge.Config{Assets: fake, DefaultProject: "proj-1", CacheDir: t.TempDir(), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.LegendKeeper = b
-	s := newTestServer(t, d, RegisterLegendKeeperTools)
-
-	t.Run("avatar to folder path", func(t *testing.T) {
-		var out lkbridge.Result
-		decodeResult(t, callTool(t, s, lkToolMessage, map[string]any{
-			"channel_id": discord.MockGeneralID, "message_id": mtTupperMsg, "avatar": true,
-			"lk_folder_path": "Druskenvald SPG/Characters", "name": "Ser Thaddeus Mournvale"}), &out)
-		if out.AssetID != "img-Ser Thaddeus Mournvale" || out.FolderID != "folder-Characters" || out.ContentType != "image/png" ||
-			out.Bytes != len(avatar) || out.Width != 40 || out.Project != "proj-1" || !strings.Contains(out.SourceURL, "/avatars/") {
-			t.Fatalf("result = %+v", out)
-		}
-		if !bytes.Equal(fake.uploads[0].Data, avatar) {
-			t.Fatal("format original must upload the untouched bytes")
-		}
-		// Same bytes again: deduplicated.
-		decodeResult(t, callTool(t, s, lkToolMessage, map[string]any{
-			"channel_id": discord.MockGeneralID, "message_id": mtTupperMsg, "avatar": true, "name": "again"}), &out)
-		if !out.Deduplicated || len(fake.uploads) != 1 {
-			t.Fatalf("dedupe: %+v uploads=%d", out, len(fake.uploads))
-		}
-	})
-
-	t.Run("url tool", func(t *testing.T) {
-		var out lkbridge.Result
-		decodeResult(t, callTool(t, s, lkToolURL, map[string]any{
-			"url": mtCDN + "/attachments/1/2/big-map.png", "format": "jpeg", "max_dimension": 32}), &out)
-		if out.ContentType != "image/jpeg" || out.Width != 32 || out.Name != "big map" {
-			t.Fatalf("url result = %+v", out)
-		}
-		if res := callTool(t, s, lkToolURL, map[string]any{"url": "https://example.com/a.png"}); !res.IsError {
-			t.Fatal("disallowed host must fail")
-		}
-	})
-
-	t.Run("batch continues on error", func(t *testing.T) {
-		var out lkBatchResponse
-		decodeResult(t, callTool(t, s, lkToolBatch, map[string]any{
-			"lk_folder_path": "Druskenvald SPG/Maps",
-			"items": []any{
-				map[string]any{"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "attachment_index": 0, "name": "broken"},
-				map[string]any{"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "attachment_index": 0, "format": "png", "max_dimension": 16},
-				map[string]any{"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "attachment_index": 9},
-			}}), &out)
-		if out.Succeeded != 1 || out.Failed != 2 || len(out.Results) != 3 || out.Results[1].AssetID == "" ||
-			!strings.Contains(out.Results[0].Error, "413") || !strings.Contains(out.Results[2].Error, "out of range") {
-			t.Fatalf("batch = %+v", out)
-		}
-		decodeResult(t, callTool(t, s, lkToolBatch, map[string]any{"continue_on_error": false,
-			"items": []any{
-				map[string]any{"channel_id": discord.MockGeneralID, "message_id": mtArtMsg, "attachment_index": 9},
-				map[string]any{"channel_id": discord.MockGeneralID, "message_id": mtTupperMsg, "avatar": true},
-			}}), &out)
-		if len(out.Results) != 1 || out.Failed != 1 {
-			t.Fatalf("stop on error = %+v", out)
-		}
-		if res := callTool(t, s, lkToolBatch, map[string]any{"items": []any{}}); !res.IsError {
-			t.Fatal("empty batch must fail")
-		}
-	})
-
-	t.Run("read-only blocks uploads", func(t *testing.T) {
-		ro, _ := mtSetup(t, &config.Config{ReadOnly: true}, files)
-		ro.LegendKeeper = b
-		rs := newTestServer(t, ro, RegisterLegendKeeperTools)
-		res := callTool(t, rs, lkToolURL, map[string]any{"url": mtCDN + "/attachments/1/2/big-map.png"})
-		if !res.IsError || !strings.Contains(resultText(t, res), "read-only") {
-			t.Fatalf("read-only: %s", resultText(t, res))
-		}
-	})
 }

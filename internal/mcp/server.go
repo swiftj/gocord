@@ -22,7 +22,7 @@ const instructions = `Discord MCP server. Read discord://guilds/{guild_id}/map b
 Any guild/channel/user/role parameter accepts a Snowflake, #name, @name, or mention.
 Destructive tools accept dry_run: true — preview first, then apply.
 discord_search_messages uses a local FTS5 index with automatic backfill (Discord's search API is unavailable to bots).
-Images: discord_fetch_media returns bytes inline; discord_media_to_legendkeeper copies them to LegendKeeper server-side. Attachment URLs are signed and expire, so pass channel_id + message_id rather than a cached URL.`
+Images: discord_fetch_media returns bytes inline, or with save_to writes them under the local media root (media_list_files shows what is there) for other tools to upload. Attachment URLs are signed and expire, so pass channel_id + message_id rather than a cached URL.`
 
 // registrations lists every registration hook in a stable order.
 var registrations = []func(*server.MCPServer, deps.Deps){
@@ -37,7 +37,6 @@ var registrations = []func(*server.MCPServer, deps.Deps){
 	tools.RegisterEventTools,
 	tools.RegisterInteractionTools,
 	tools.RegisterMediaTools,
-	tools.RegisterLegendKeeperTools,
 	tools.RegisterTupperAccessTools,
 	resources.Register,
 	prompts.Register,

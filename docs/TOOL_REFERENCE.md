@@ -1,7 +1,7 @@
 # Tool Reference
 
 `discord-mcp` exposes **44 tools** (28 baseline-parity tools compatible with
-`barryyip0625/mcp-discord`, 9 differentiating tools, and 7 media, LegendKeeper, and
+`barryyip0625/mcp-discord`, 9 differentiating tools, and 7 media, local-file, and
 diagnostic tools), 3 resources, and 3 prompts.
 
 Conventions:
@@ -55,10 +55,10 @@ Conventions:
 | 36 | [`discord_manage_events`](#discord_manage_events) | R/W | List or create guild scheduled events. Start time must be in the future. |
 | 37 | [`discord_governance_audit`](#discord_governance_audit) | R/D, DR | Query audit logs, list AutoMod rules, or time out a member. |
 | 38 | [`discord_get_member_avatar`](#discord_get_member_avatar) | R | A member's account and server avatar URLs and display name. |
-| 39 | [`discord_fetch_media`](#discord_fetch_media) | R | An attachment, author avatar, or allowlisted URL as inline base64, resized and chunked. |
-| 40 | [`discord_media_to_legendkeeper`](#discord_media_to_legendkeeper) | W | Copy an attachment or author avatar into a LegendKeeper asset library. |
-| 41 | [`fetch_url_to_legendkeeper`](#fetch_url_to_legendkeeper) | W | Copy an allowlisted URL into a LegendKeeper asset library. |
-| 42 | [`discord_batch_media_to_legendkeeper`](#discord_batch_media_to_legendkeeper) | W | Up to 25 bridge uploads in one call. |
+| 39 | [`discord_fetch_media`](#discord_fetch_media) | R / local W | An attachment, author avatar, or allowlisted URL as inline base64 (resized, chunked), or saved to a file with `save_to`. |
+| 40 | [`fetch_url_to_file`](#fetch_url_to_file) | local W | Save an allowlisted URL under the local media root. |
+| 41 | [`discord_batch_fetch_media`](#discord_batch_fetch_media) | local W | Save up to 25 attachments/avatars in one call. |
+| 42 | [`media_list_files`](#media_list_files) | R | List files under the local media root. |
 | 43 | [`discord_list_tuppers`](#discord_list_tuppers) | R | Webhook (Tupperbox/PluralKit) identities with their latest avatar. |
 | 44 | [`discord_check_access`](#discord_check_access) | R | Effective View/Read History per channel, with a fix for each blocked one. |
 
@@ -1289,9 +1289,9 @@ Example response (text content):
 }
 ```
 
-## Media, LegendKeeper, and diagnostic tools (38–44)
+## Media, local-file, and diagnostic tools (38–44)
 
-Contract and rules: [specs/05-media-and-legendkeeper.md](../specs/05-media-and-legendkeeper.md).
+Contract and rules: [specs/05-media-and-local-files.md](../specs/05-media-and-local-files.md).
 
 Message objects returned by every tool now also carry `is_webhook`, `webhook_id`,
 `author_display_name`, and `author_avatar_url`. Attachments add `id`,
@@ -1299,9 +1299,19 @@ Message objects returned by every tool now also carry `is_webhook`, `webhook_id`
 expire (typically after about 24 hours). Re-resolve them from `channel_id` +
 `message_id`; don't cache them.
 
-**Image source** (fetch and bridge tools): `channel_id` + `message_id` plus
-exactly one of `attachment_index` (0-based), `attachment_id`, or `avatar`; or
-`url` on an allowlisted host.
+**Image source:** `channel_id` + `message_id` plus exactly one of
+`attachment_index` (0-based), `attachment_id`, or `avatar`; or `url` on an
+allowlisted host.
+
+**Saving:**
+
+- `save_to` resolves under the media root (`GOCORD_MEDIA_DIR`, default
+  `~/Downloads/gocord`). It may not escape it via `..` or symlinks.
+- Absolute paths outside the root need `GOCORD_MEDIA_ALLOW_ABSOLUTE=true`.
+- A missing extension is appended; a conflicting one is an error. Without
+  `format`, a `.png`/`.jpg` extension picks it.
+- Identical existing files return `deduplicated: true`. Different ones need
+  `overwrite: true` and are replaced atomically.
 
 ### discord_get_member_avatar
 
@@ -1317,54 +1327,52 @@ Returns `{user_id, display_name, avatar_url, guild_avatar_url?, animated}`.
 
 ### discord_fetch_media
 
-**#39 · Kind:** R
+**#39 · Kind:** R, or local write with `save_to`
 
 | Parameter | Type | Required | Notes |
 | :--- | :--- | :-- | :--- |
 | image source | — | yes | See above. |
 | `max_dimension` | number | no | Default 1600; 0 keeps the original size. Never upscales. |
-| `format` | string | no | `jpeg` (default), `png`, `webp` (returned as PNG), `original` (untouched bytes). |
+| `format` | string | no | `jpeg` (default, or from the `save_to` extension), `png`, `webp` (written as PNG), `original` (untouched bytes). |
 | `quality` | number | no | JPEG quality 1–100, default 85. |
-| `offset`, `length` | number | no | Chunked retrieval of the encoded payload; `length` ≤ 1,000,000. |
+| `offset`, `length` | number | no | Chunked base64 of the encoded payload; `length` ≤ 1,000,000. Not with `save_to`. |
+| `save_to` | string | no | Write a file instead of returning base64. |
+| `overwrite` | boolean | no | Replace a different existing file (default `false`). |
 
 Returns `{mime, filename, width, height, total_bytes, offset, length, eof, sha256, base64, hint?}`.
-Payloads over 1,000,000 bytes return the first chunk with `eof: false` and a
-`hint`. Concatenating every chunk reproduces `sha256`.
-
-### discord_media_to_legendkeeper
-
-**#40 · Kind:** W (writes to LegendKeeper; blocked by `--read-only`)
-
-| Parameter | Type | Required | Notes |
-| :--- | :--- | :-- | :--- |
-| `channel_id`, `message_id` | string | yes | Plus one of `attachment_index`, `attachment_id`, `avatar`. |
-| `lk_project` | string | no | Default `LEGENDKEEPER_PROJECT_ID`. |
-| `lk_folder_id` / `lk_folder_path` | string | no | One or the other; a path like `Campaign/Characters` is created if missing. |
-| `name` | string | no | ≤ 120 characters; default is the filename stem. |
-| `description` | string | no |  |
-| `max_dimension`, `format`, `quality` | — | no | Default `0` / `original` (untouched bytes). |
-
-Returns `{asset_id, url, name, width, height, content_type, bytes, folder_id, source_url, project, deduplicated?}`.
+With `save_to` it returns `{path, mime, filename, width, height, bytes, sha256, overwritten, deduplicated}`.
 
 ```json
-{"name": "discord_media_to_legendkeeper", "arguments": {"channel_id": "100000000000000010", "message_id": "100000000000000150", "avatar": true, "lk_folder_path": "Druskenvald SPG/Characters", "name": "Ser Thaddeus Mournvale"}}
+{"name": "discord_fetch_media", "arguments": {"channel_id": "100000000000000010", "message_id": "100000000000000150", "avatar": true, "save_to": "Characters/DanteKeane-portrait.png"}}
 ```
 
-### fetch_url_to_legendkeeper
+### fetch_url_to_file
 
-**#41 · Kind:** W. Same as #40, but the source is `url` (required, allowlisted host).
+**#40 · Kind:** local write. Input: `{url, save_to, overwrite?, max_dimension?, format?, quality?}`.
+Returns the `save_to` fields plus `source_url`.
 
-### discord_batch_media_to_legendkeeper
+### discord_batch_fetch_media
 
-**#42 · Kind:** W
+**#41 · Kind:** local write
 
 | Parameter | Type | Required | Notes |
 | :--- | :--- | :-- | :--- |
-| `items` | array | yes | 1–25 objects with the #40 fields. |
-| `lk_project`, `lk_folder_path` | string | no | Defaults applied to items that omit them. |
+| `items` | array | yes | 1–25 objects: `{channel_id, message_id, attachment_index\|attachment_id\|avatar, save_to, overwrite?, max_dimension?, format?, quality?}`; `save_to` required. |
 | `continue_on_error` | boolean | no | Default `true`. |
 
-Items run sequentially, 250 ms apart. Returns `{results: [{index, ok, asset_id?, url?, deduplicated?, error?}], succeeded, failed}`.
+Items run sequentially, 250 ms apart. Returns `{results: [{index, ok, path?, sha256?, width?, height?, error?}], succeeded, failed}`.
+
+### media_list_files
+
+**#42 · Kind:** R
+
+| Parameter | Type | Required | Notes |
+| :--- | :--- | :-- | :--- |
+| `subdir` | string | no | Relative to the media root. |
+| `glob` | string | no | Matches the file name or root-relative path, e.g. `*.png`, `Characters/*`. |
+
+Returns `{root, files: [{path, bytes, mime, width?, height?, modified_at}], truncated?}`.
+Hidden files, temp files, and symlinks are skipped; at most 1000 entries.
 
 ### discord_list_tuppers
 

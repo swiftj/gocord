@@ -90,24 +90,33 @@ func TestExpandHome(t *testing.T) {
 	}
 }
 
-func TestMediaAndLegendKeeperEnv(t *testing.T) {
+func TestMediaEnv(t *testing.T) {
 	env := map[string]string{
-		"GOCORD_MEDIA_ALLOWED_HOSTS": "*.example.com, img.test",
-		"GOCORD_MEDIA_MAX_BYTES":     "1048576",
-		"LEGENDKEEPER_API_KEY":       "lk_test_key",
-		"LEGENDKEEPER_PROJECT_ID":    "${user_config.legendkeeper_project_id}", // unsubstituted placeholder
-		"XDG_CACHE_HOME":             "/tmp/cache",
+		"HOME":                        "/Users/test",
+		"GOCORD_MEDIA_ALLOWED_HOSTS":  "*.example.com, img.test",
+		"GOCORD_MEDIA_MAX_BYTES":      "1048576",
+		"GOCORD_MEDIA_ALLOW_ABSOLUTE": "${user_config.media_allow_absolute}", // unsubstituted placeholder
 	}
-	c, err := Load(nil, func(k string) string { return env[k] })
+	get := func(k string) string { return env[k] }
+	c, err := Load(nil, get)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.MediaAllowedHosts) != 2 || c.MediaMaxBytes != 1<<20 || c.LegendKeeperAPIKey != "lk_test_key" ||
-		c.LegendKeeperProjectID != "" || c.MediaCacheDir != "/tmp/cache/gocord" {
+	if len(c.MediaAllowedHosts) != 2 || c.MediaMaxBytes != 1<<20 || c.MediaAllowAbsolute ||
+		c.MediaDir != "/Users/test/Downloads/gocord" {
 		t.Fatalf("config = %+v", c)
 	}
-	env["GOCORD_MEDIA_MAX_BYTES"] = "lots"
-	if _, err := Load(nil, func(k string) string { return env[k] }); err == nil {
-		t.Fatal("invalid GOCORD_MEDIA_MAX_BYTES must fail")
+	env["GOCORD_MEDIA_DIR"] = "~/Art"
+	env["GOCORD_MEDIA_ALLOW_ABSOLUTE"] = "true"
+	if c, err = Load(nil, get); err != nil || c.MediaDir != "/Users/test/Art" || !c.MediaAllowAbsolute {
+		t.Fatalf("config = %+v, %v", c, err)
+	}
+	for k, v := range map[string]string{"GOCORD_MEDIA_MAX_BYTES": "lots", "GOCORD_MEDIA_ALLOW_ABSOLUTE": "maybe"} {
+		old := env[k]
+		env[k] = v
+		if _, err := Load(nil, get); err == nil {
+			t.Errorf("invalid %s must fail", k)
+		}
+		env[k] = old
 	}
 }

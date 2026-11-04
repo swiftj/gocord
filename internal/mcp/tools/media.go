@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -29,7 +30,8 @@ const (
 	mediaNotConfiguredTx = "media fetching is not configured on this server"
 )
 
-// RegisterMediaTools registers discord_get_member_avatar and discord_fetch_media.
+// RegisterMediaTools registers discord_get_member_avatar, discord_fetch_media,
+// and the local-file tools (fetch_url_to_file, discord_batch_fetch_media, media_list_files).
 func RegisterMediaTools(s *server.MCPServer, d deps.Deps) {
 	s.AddTool(blTool(mediaToolAvatar,
 		"Get a member's avatar URLs and display name. avatar_url is the account avatar; guild_avatar_url is the server-specific one when set.",
@@ -41,9 +43,9 @@ func RegisterMediaTools(s *server.MCPServer, d deps.Deps) {
 	), mediaAvatarHandler(d))
 
 	s.AddTool(blTool(mediaToolFetch,
-		"Download an image (a message attachment, a message author's avatar, or an allowlisted URL) and return it inline as base64, resized and re-encoded. "+
-			"Payloads over 1,000,000 bytes are returned in chunks via offset/length.",
-		blReadOnly(),
+		"Download an image (a message attachment, a message author's avatar, or an allowlisted URL), resized and re-encoded. "+
+			"Returns it inline as base64 (chunked via offset/length over 1,000,000 bytes), or with save_to writes it under the local media root and returns the path.",
+		mediaSaveAnnotations(),
 		append(mediaSourceParams(false),
 			mcp.WithNumber("max_dimension", mcp.Min(0), mcp.Max(mediaMaxDimension), mcp.DefaultNumber(mediaDefaultMaxDim),
 				mcp.Description("Scale the longest edge down to this many pixels (never up); 0 keeps the original size.")),
@@ -52,12 +54,15 @@ func RegisterMediaTools(s *server.MCPServer, d deps.Deps) {
 			mcp.WithNumber("quality", mcp.Min(1), mcp.Max(100), mcp.DefaultNumber(media.DefaultQuality), mcp.Description("JPEG quality (1-100).")),
 			mcp.WithNumber("offset", mcp.Min(0), mcp.Description("Byte offset into the encoded payload, for chunked retrieval.")),
 			mcp.WithNumber("length", mcp.Min(1), mcp.Max(mediaMaxChunk), mcp.Description("Bytes to return from offset (max 1,000,000).")),
+			mediaSaveToParam(false), mediaOverwriteParam(),
 		)...,
 	), mediaFetchHandler(d))
+
+	registerMediaFileTools(s, d)
 }
 
 // mediaSourceParams are the image-source parameters shared by the fetch and
-// bridge tools. messageRequired makes channel_id and message_id required.
+// batch tools. messageRequired makes channel_id and message_id required.
 func mediaSourceParams(messageRequired bool) []mcp.ToolOption {
 	msgOpt := func(desc string) []mcp.PropertyOption {
 		if messageRequired {
@@ -110,11 +115,20 @@ func mediaSourceFrom(ctx context.Context, d deps.Deps, req mcp.CallToolRequest, 
 }
 
 // mediaOptions reads max_dimension/format/quality. defDim and defFormat are
-// the tool's defaults.
+// the tool's defaults. Without an explicit format, an image extension on
+// save_to picks it (.png → png, .jpg → jpeg, .gif/.webp → original).
 func mediaOptions(req mcp.CallToolRequest, defDim int, defFormat string) (media.FetchOptions, *mcp.CallToolResult) {
-	format := strings.ToLower(strings.TrimSpace(req.GetString("format", defFormat)))
+	format := strings.ToLower(strings.TrimSpace(req.GetString("format", "")))
 	if format == "" {
 		format = defFormat
+		switch strings.ToLower(filepath.Ext(req.GetString("save_to", ""))) {
+		case ".png":
+			format = "png"
+		case ".jpg", ".jpeg":
+			format = "jpeg"
+		case ".gif", ".webp":
+			format = mediaFormatOriginal
+		}
 	}
 	if !slices.Contains([]string{"jpeg", "png", "webp", mediaFormatOriginal}, format) {
 		return media.FetchOptions{}, errorf("format must be jpeg, png, webp, or original (got %q)", format)
@@ -135,7 +149,8 @@ func mediaOptions(req mcp.CallToolRequest, defDim int, defFormat string) (media.
 
 // mediaErr maps media errors to tool results.
 func mediaErr(err error) *mcp.CallToolResult {
-	if errors.Is(err, media.ErrInvalidSource) || errors.Is(err, media.ErrUnsupportedType) || errors.Is(err, media.ErrTooLarge) {
+	if errors.Is(err, media.ErrInvalidSource) || errors.Is(err, media.ErrUnsupportedType) || errors.Is(err, media.ErrTooLarge) ||
+		errors.Is(err, media.ErrPath) || errors.Is(err, media.ErrExists) {
 		return errorf("%v", err)
 	}
 	return errorResult(err)
@@ -172,9 +187,23 @@ func mediaFetchHandler(d deps.Deps) server.ToolHandlerFunc {
 		if hasArg(req, "length") && (length < 1 || length > mediaMaxChunk) {
 			return errorf("length must be 1-%d (got %d)", mediaMaxChunk, length), nil
 		}
+		saveTo := strings.TrimSpace(req.GetString("save_to", ""))
+		if saveTo != "" && (hasArg(req, "offset") || hasArg(req, "length")) {
+			return errorf("offset/length apply to inline base64; omit them with save_to"), nil
+		}
+		if saveTo != "" && d.MediaStore == nil {
+			return errorf(mediaNoStoreTx), nil
+		}
 		src, res := mediaSourceFrom(ctx, d, req, mediaToolFetch)
 		if res != nil {
 			return res, nil
+		}
+		if saveTo != "" {
+			out, res := mediaFetchAndSave(ctx, d, src, opts, saveTo, req.GetBool("overwrite", false))
+			if res != nil {
+				return res, nil
+			}
+			return jsonResult(out.Saved), nil
 		}
 		f, err := d.Media.FetchCached(ctx, src, opts)
 		if err != nil {

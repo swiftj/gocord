@@ -54,13 +54,11 @@ type Config struct {
 	// Media (env only): extra allowed hosts and the download cap in bytes (0 = default).
 	MediaAllowedHosts []string
 	MediaMaxBytes     int64
-	// LegendKeeper bridge (env only). An empty key leaves the bridge unconfigured.
-	LegendKeeperAPIKey    string `json:"-"` // never serialised or logged
-	LegendKeeperProjectID string
-	LegendKeeperBaseURL   string
-	// MediaCacheDir holds the LegendKeeper upload dedupe index
-	// ($XDG_CACHE_HOME/gocord, else ~/.cache/gocord).
-	MediaCacheDir string
+	// MediaDir is the root that save_to paths resolve under (GOCORD_MEDIA_DIR,
+	// default ~/Downloads/gocord). MediaAllowAbsolute permits absolute save_to
+	// paths outside it (GOCORD_MEDIA_ALLOW_ABSOLUTE).
+	MediaDir           string
+	MediaAllowAbsolute bool
 }
 
 // Defaults.
@@ -69,6 +67,7 @@ const (
 	DefaultHTTPAddr = "127.0.0.1:8080"
 	DefaultDBPath   = ":memory:"
 	DefaultLogLevel = "info"
+	DefaultMediaDir = "~/Downloads/gocord"
 )
 
 // ErrInlineToken is returned when a profiles file contains a literal token.
@@ -194,14 +193,17 @@ func Load(args []string, getenv func(string) string) (*Config, error) {
 		}
 		c.MediaMaxBytes = n
 	}
-	c.LegendKeeperAPIKey = env("LEGENDKEEPER_API_KEY")
-	c.LegendKeeperProjectID = env("LEGENDKEEPER_PROJECT_ID")
-	c.LegendKeeperBaseURL = env("LEGENDKEEPER_BASE_URL")
-	switch {
-	case getenv("XDG_CACHE_HOME") != "":
-		c.MediaCacheDir = filepath.Join(getenv("XDG_CACHE_HOME"), "gocord")
-	case getenv("HOME") != "":
-		c.MediaCacheDir = filepath.Join(getenv("HOME"), ".cache", "gocord")
+	c.MediaDir = env("GOCORD_MEDIA_DIR")
+	if c.MediaDir == "" {
+		c.MediaDir = DefaultMediaDir
+	}
+	c.MediaDir = expandHome(c.MediaDir, getenv)
+	if v := env("GOCORD_MEDIA_ALLOW_ABSOLUTE"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("GOCORD_MEDIA_ALLOW_ABSOLUTE: %w", err)
+		}
+		c.MediaAllowAbsolute = b
 	}
 
 	return &c, nil

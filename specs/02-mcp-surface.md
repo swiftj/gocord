@@ -2,7 +2,7 @@
 
 **Read when:** Editing `internal/mcp/**`. Contracts for `discord.Service` and DTOs live in `specs/01-architecture-and-contracts.md` §4–5.
 
-`tools/list` MUST return exactly **44 tools**: 28 baseline parity tools (compatible with `barryyip0625/mcp-discord`), 9 differentiating tools, and the 7 media, LegendKeeper, and diagnostic tools (38–44) specified in `specs/05-media-and-legendkeeper.md`.
+`tools/list` MUST return exactly **44 tools**: 28 baseline parity tools (compatible with `barryyip0625/mcp-discord`), 9 differentiating tools, and the 7 media, local-file, and diagnostic tools (38–44) specified in `specs/05-media-and-local-files.md`.
 
 ## 1. Conventions for Every Tool
 - **Naming:** `discord_<verb>_<noun>`, snake_case. Parameter names are snake_case and match the tables below exactly. They are part of the public contract.

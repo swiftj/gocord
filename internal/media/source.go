@@ -1,7 +1,8 @@
 // Package media resolves and downloads images referenced by Discord messages
 // (attachments, author avatars) or by allowlisted URLs, and optionally resizes
-// and re-encodes them in pure Go. It backs discord_fetch_media and the
-// LegendKeeper bridge tools. See specs/05-media-and-legendkeeper.md.
+// and re-encodes them in pure Go, then optionally saves them under a local
+// media root (Store). It backs discord_fetch_media and the local-file tools.
+// See specs/05-media-and-local-files.md.
 package media
 
 import (

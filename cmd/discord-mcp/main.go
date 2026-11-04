@@ -26,7 +26,6 @@ import (
 	"github.com/local/discord-mcp/internal/config"
 	"github.com/local/discord-mcp/internal/discord"
 	"github.com/local/discord-mcp/internal/index"
-	"github.com/local/discord-mcp/internal/lkbridge"
 	"github.com/local/discord-mcp/internal/mcp"
 	"github.com/local/discord-mcp/internal/media"
 	"github.com/local/discord-mcp/internal/policy"
@@ -57,12 +56,11 @@ Flags (each also settable via the env var shown):
   --version                 print version and exit
   -h, --help                show this help
 
-Media and LegendKeeper (environment only):
+Media (environment only):
+  GOCORD_MEDIA_DIR            root for saved images (default ~/Downloads/gocord)
+  GOCORD_MEDIA_ALLOW_ABSOLUTE allow absolute save_to paths outside the root (default false)
   GOCORD_MEDIA_ALLOWED_HOSTS  extra image hosts, comma-separated ("*.example.com" allowed)
   GOCORD_MEDIA_MAX_BYTES      download cap (default 26214400, 25 MB)
-  LEGENDKEEPER_API_KEY        enables the LegendKeeper bridge tools
-  LEGENDKEEPER_PROJECT_ID     default LegendKeeper project
-  LEGENDKEEPER_BASE_URL       API base URL override
 
 The MessageContent and GuildMembers privileged intents must be enabled for the
 bot in the Discord Developer Portal.
@@ -118,17 +116,10 @@ func run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 		}
 	}()
 
-	lkb, err := lkbridge.New(lkbridge.Config{
-		APIKey: cfg.LegendKeeperAPIKey, DefaultProject: cfg.LegendKeeperProjectID, BaseURL: cfg.LegendKeeperBaseURL,
-		CacheDir: cfg.MediaCacheDir, Logger: logger,
-	})
-	if err != nil {
-		logger.Error("LegendKeeper bridge disabled", "err", err)
-	}
 	s, notifier := mcp.New(mcp.Deps{
 		Discord: client, Store: store, Guard: policy.New(cfg), Config: cfg, Logger: logger,
-		Media:        media.New(client, media.Config{ExtraHosts: cfg.MediaAllowedHosts, MaxBytes: cfg.MediaMaxBytes, Logger: logger}),
-		LegendKeeper: lkb,
+		Media:      media.New(client, media.Config{ExtraHosts: cfg.MediaAllowedHosts, MaxBytes: cfg.MediaMaxBytes, Logger: logger}),
+		MediaStore: media.NewStore(cfg.MediaDir, cfg.MediaAllowAbsolute),
 	}, version)
 	client.OnEvent(notifier.HandleEvent) // resource subscriptions (spec 02 §4)
 

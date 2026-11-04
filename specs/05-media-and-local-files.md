@@ -1,12 +1,13 @@
-# Spec 05 — Media access, Tupperbox avatars, and the LegendKeeper bridge
+# Spec 05 — Media access, Tupperbox avatars, and local media files
 
 Claude often runs in a sandbox that cannot reach `cdn.discordapp.com`,
-`media.discordapp.net`, `assets.legendkeeper.com`, or other image hosts. This
-spec adds two ways to move image bytes without the model downloading them:
-**inline** (base64 inside a tool result) and **server-side** (gocord copies the
-image into a LegendKeeper asset library and returns the asset URL). It also adds
-identity fields for webhook (Tupperbox/PluralKit) messages and a permissions
-diagnostic. Tool count: 37 → **44**.
+`media.discordapp.net`, `assets.legendkeeper.com`, or other image hosts. gocord
+moves image bytes in two ways: **inline** (base64 inside a tool result) or **to
+local disk** under a media root, where another local MCP server (e.g. lkmcp for
+LegendKeeper) can pick the file up by path. gocord itself never talks to the
+LegendKeeper API. This spec also adds identity fields for webhook
+(Tupperbox/PluralKit) messages and a permissions diagnostic. Tool count:
+37 → **44**.
 
 ## 1. Contract additions
 
@@ -85,15 +86,16 @@ the new columns. `Store.ListWebhookAuthors` groups webhook messages by
 | # | Tool | Kind | Summary |
 | :-- | :--- | :-- | :--- |
 | 38 | `discord_get_member_avatar` | R | `{guild_id?, user_id, size?∈128…4096}` → `{user_id, display_name, avatar_url, guild_avatar_url?, animated}` |
-| 39 | `discord_fetch_media` | R | Inline base64, chunked. See §3.1. |
-| 40 | `discord_media_to_legendkeeper` | W (LK) | Message attachment or avatar → LK asset. |
-| 41 | `fetch_url_to_legendkeeper` | W (LK) | Allowlisted URL → LK asset. |
-| 42 | `discord_batch_media_to_legendkeeper` | W (LK) | 1–25 items, sequential, 250 ms apart. |
+| 39 | `discord_fetch_media` | R / local write | Inline base64 (chunked), or `save_to` a file. See §3.1. |
+| 40 | `fetch_url_to_file` | local write | Allowlisted URL → file. See §3.2. |
+| 41 | `discord_batch_fetch_media` | local write | 1–25 message sources → files, sequential, 250 ms apart. |
+| 42 | `media_list_files` | R | Files under the media root. |
 | 43 | `discord_list_tuppers` | R | Webhook identities with their latest avatar. |
 | 44 | `discord_check_access` | R | Effective View/ReadHistory per channel with a fix string. |
 
 All message-source tools resolve `channel_id` and run a read policy check on it.
-The bridge tools also respect `--read-only`: they write to LegendKeeper.
+Saving writes only the local disk, so `--read-only` (a Discord-write guard) does
+not block it. The saving tools are annotated `readOnlyHint: false`.
 
 ### 3.1 `discord_fetch_media`
 
@@ -102,47 +104,70 @@ Input:
 - Source: `channel_id`, `message_id`, plus one of `attachment_index`,
   `attachment_id`, or `avatar`; or `url` instead.
 - `max_dimension`: default 1600; 0 keeps the original size.
-- `format`: `jpeg` (default), `png`, `webp`, or `original`.
+- `format`: `jpeg`, `png`, `webp`, or `original`.
 - `quality`: default 85.
-- `offset`, `length`: for chunked retrieval.
+- `offset`, `length`: for chunked base64.
+- `save_to`, `overwrite`: write a file instead (§3.2).
 
-Output: `{mime, filename, width, height, total_bytes, offset, length, eof, sha256, base64, hint?}`.
+Without `save_to` the output is
+`{mime, filename, width, height, total_bytes, offset, length, eof, sha256, base64, hint?}`:
 
 - `format: "original"` returns the untouched bytes and ignores `max_dimension`.
 - Without `offset`/`length`, the tool returns the whole payload if it is ≤ 1,000,000
-  bytes. Otherwise it returns the first 1,000,000 bytes, `eof:false`, and a `hint`
-  explaining how to page.
+  bytes. Otherwise it returns the first 1,000,000 bytes, `eof:false`, and a `hint`.
 - `length` is at most 1,000,000. Every chunk is cut from the same cached encoding,
   so `sha256` is constant and concatenating all chunks reproduces it.
 
-### 3.2 Bridge tools
+With `save_to` the output is
+`{path, mime, filename, width, height, bytes, sha256, overwritten, deduplicated}`
+and no base64. `offset`/`length` are rejected.
 
-- Configuration: `LEGENDKEEPER_API_KEY` (required), `LEGENDKEEPER_PROJECT_ID`
-  (the default project), and `LEGENDKEEPER_BASE_URL` (optional).
-- Without an API key the tools still register, but return
-  `LegendKeeper not configured: …`.
-- Uploads go through `github.com/swiftj/golk` `Assets.UploadImage`, which runs
-  three steps: create an upload, PUT the bytes to signed storage with only the
-  returned headers, then create the image. Folders use `Assets.List` and
-  `Assets.CreateFolder`, scoped per call with `lk.ForProject`. **No LegendKeeper
-  calls are inferred from the web app.**
-- Targets:
-  - Pass at most one of `lk_folder_id` and `lk_folder_path`.
-  - A path such as `Campaign/Characters` is resolved case-insensitively and
-    missing folders are created. Results are cached per process.
-- Names:
-  - `name` is at most 120 characters. Control characters and `/` `\` are dropped
-    and whitespace is collapsed.
-  - The default name is the source filename's stem, with `_`/`-` turned into spaces.
-- Dedupe:
-  - The index file is `$XDG_CACHE_HOME/gocord/lk-assets.json` (or
-    `~/.cache/gocord/`), mode 0600, written atomically.
-  - It maps `project:sha256(final bytes)` to the asset.
-  - A hit returns that asset with `deduplicated: true` and does not upload.
-- Output: `{asset_id, url, name, width, height, content_type, bytes, folder_id, source_url, project, deduplicated?}`.
-- Batch output: `{results:[{index, ok, asset_id?, url?, deduplicated?, error?}], succeeded, failed}`.
-  `continue_on_error` defaults to true.
-- Logs contain asset IDs and byte counts only, never API keys or signed URLs.
+### 3.2 Saving to disk (`save_to`, `fetch_url_to_file`, `discord_batch_fetch_media`)
+
+- **Media root:** `GOCORD_MEDIA_DIR`, default `~/Downloads/gocord` (`~`
+  expanded). Directories are created on demand with mode 0755; files are 0644.
+- **Paths:**
+  - A relative `save_to` resolves under the root. It is cleaned, and any result
+    that escapes the root (`..`) is rejected.
+  - An absolute `save_to` inside the root is accepted. Outside the root it needs
+    `GOCORD_MEDIA_ALLOW_ABSOLUTE=true` (off by default).
+  - For paths confined to the root, the deepest existing ancestor and then the
+    created parent are resolved with `filepath.EvalSymlinks`. Both must stay
+    inside the (resolved) root, so a symlinked directory cannot redirect a
+    write, and nothing is created outside the root.
+  - The target itself must not be a symlink or a directory.
+  - File names must not start with `.`.
+- **Extension:**
+  - A `save_to` without an extension gets one from the output type (`.png`,
+    `.jpg`, `.gif`, `.webp`). A dotted name such as "Ser T. Mournvale" counts as
+    having no extension.
+  - An extension that disagrees with the output type is an error. `.jpg` and
+    `.jpeg` both mean JPEG.
+- **Format default:**
+  - Without `format`, an image extension on `save_to` picks it: `.png` → `png`,
+    `.jpg`/`.jpeg` → `jpeg`, `.gif`/`.webp` → `original`.
+  - Otherwise the default is `jpeg`. So `save_to: "x.png"` writes the untouched
+    bytes of a PNG source.
+  - Resize and format options apply before saving, e.g. `max_dimension: 2048,
+    format: "jpeg"` caps a 4K render on its way to disk.
+- **Existing files:**
+  - Same sha256 → `deduplicated: true`, and nothing is written.
+  - Different sha256 → an error unless `overwrite: true`.
+  - New files and overwrites are written atomically: a temp file in the same
+    directory is fsynced, renamed into place, and the directory is fsynced.
+- **`fetch_url_to_file`:**
+  - Input: `{url, save_to, overwrite?, max_dimension?, format?, quality?}`.
+  - Output: the saved fields plus `source_url`.
+- **`discord_batch_fetch_media`:**
+  - Input: `{items: [{channel_id, message_id, attachment_index|attachment_id|avatar, save_to, overwrite?, max_dimension?, format?, quality?}] (1–25), continue_on_error? (default true)}`.
+  - `save_to` is required on every item, and `url` is rejected (use `fetch_url_to_file`).
+  - Output: `{results: [{index, ok, path?, sha256?, width?, height?, error?}], succeeded, failed}`.
+- **`media_list_files`:**
+  - Input: `{subdir?, glob?}`. `subdir` is relative and confined to the root.
+    `glob` matches the file name or the root-relative path.
+  - Output: `{root, files: [{path, bytes, mime, width?, height?, modified_at}], truncated?}`.
+  - Hidden files, temp files, and symlinks are skipped; at most 1000 entries.
+  - It is read-only.
 
 ### 3.3 `discord_list_tuppers`
 
@@ -152,8 +177,8 @@ Output: `{mime, filename, width, height, total_bytes, offset, length, eof, sha25
 - Then groups indexed webhook messages by `(webhook_id, display name)`, newest first.
 - Each entry reports `avatar_url`, `last_seen_message_id`, `last_seen_channel_id`,
   `last_seen_at`, and `message_count`, all taken from the newest message.
-- Avatar URLs reflect the latest message. Fetch them promptly, or bridge them with
-  `discord_media_to_legendkeeper(avatar: true)`.
+- Avatar URLs reflect the latest message. Fetch them promptly, or save them with
+  `discord_fetch_media(avatar: true, save_to: …)`.
 
 ### 3.4 `discord_check_access`
 
@@ -173,6 +198,4 @@ Output: `{mime, filename, width, height, total_bytes, offset, length, eof, sha25
 ## 4. Dependencies
 
 - `golang.org/x/image` (pure Go: `draw`, `webp`).
-- `github.com/swiftj/golk` v0.4.2.
-- golk requires Go 1.27, so the module's `go` directive is now 1.27.
-- Everything still builds with `CGO_ENABLED=0`.
+- Everything still builds with `CGO_ENABLED=0` on Go 1.26+.
