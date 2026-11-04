@@ -29,3 +29,10 @@
   are re-read to fill the webhook and avatar columns.
 - Minimum Go version is 1.27, as required by `github.com/swiftj/golk`.
 - Tool count: 37 → 44.
+
+### Fixed
+
+- `build-mac-kit.sh` now defaults to the semver tag on HEAD, or to
+  `0.<UTC date>.<UTC time>` when HEAD has none. The old default (`0.0.0-<sha>`)
+  sorted below already-installed versions, so Claude Desktop kept the old
+  extension without saying so.

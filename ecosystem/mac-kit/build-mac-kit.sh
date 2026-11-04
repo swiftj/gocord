@@ -6,7 +6,10 @@
 #
 #   --default-guild  guild used when a tool omits guild_id (baked into the
 #                    Desktop extension's defaults; never commit the result)
-#   version          defaults to `git describe --tags --always` (leading "v" stripped)
+#   version          semver for the kit and Desktop extension. Default: the tag on
+#                    HEAD when it is semver, else 0.<UTC date>.<UTC time>, which
+#                    always sorts above earlier builds (Desktop ignores an
+#                    extension whose version is not higher than the installed one)
 #
 # Output: dist-dxt/gocord-mac-kit_<version>.zip containing
 #   install.sh, README.txt, bin/{discord-mcp,discord-mcp-launch},
@@ -19,7 +22,7 @@ VERSION=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --default-guild) GUILD="${2:?--default-guild needs a value}"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0" >&2; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0" >&2; exit 0 ;;
     -*) echo "build-mac-kit: unknown option: $1" >&2; exit 2 ;;
     *) VERSION="$1"; shift ;;
   esac
@@ -39,11 +42,21 @@ if [ -n "$GUILD" ] && ! printf '%s' "$GUILD" | grep -Eq '^[0-9]{17,20}$'; then
   die "--default-guild must be a numeric Snowflake"
 fi
 
-[ -n "$VERSION" ] || VERSION="$(git describe --tags --always 2>/dev/null || echo dev)"
+SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$'
+if [ -z "$VERSION" ]; then
+  tag="$(git describe --tags --exact-match 2>/dev/null || true)"
+  if printf '%s' "${tag#v}" | grep -Eq "$SEMVER_RE"; then
+    VERSION="${tag#v}"
+  else
+    stamp="$(date -u +%Y%m%d.%H%M%S)"
+    # 10# drops leading zeros, which semver forbids (e.g. 000512 -> 512).
+    VERSION="0.${stamp%.*}.$((10#${stamp#*.}))"
+  fi
+fi
 VERSION="${VERSION#v}"
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo none)"
 DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-if printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$'; then
+if printf '%s' "$VERSION" | grep -Eq "$SEMVER_RE"; then
   MANIFEST_VERSION="$VERSION"
 else
   MANIFEST_VERSION="0.0.0-$(printf '%s' "$VERSION" | tr -c '0-9A-Za-z-' '-' | sed 's/-*$//')"
