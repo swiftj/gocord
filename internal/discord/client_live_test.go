@@ -81,6 +81,9 @@ func TestMapErr(t *testing.T) {
 	if got := mapErr("op", restErr(400, 50035, "Invalid Form Body")); errors.Is(got, ErrNotFound) || !strings.Contains(got.Error(), "Invalid Form Body") {
 		t.Errorf("400 mapped to %v", got)
 	}
+	if got := mapErr("op", restErr(413, 40005, "Request entity too large")); !strings.Contains(got.Error(), "upload limit") {
+		t.Errorf("413 mapped to %v", got)
+	}
 }
 
 func TestParseWebhookURL(t *testing.T) {
@@ -129,7 +132,7 @@ func TestOpenAttachment(t *testing.T) {
 	fh, _ := os.Create(big)
 	_ = fh.Truncate(MaxAttachmentBytes + 1)
 	_ = fh.Close()
-	if _, _, err := openAttachment(big); err == nil || !strings.Contains(err.Error(), "25 MiB") {
+	if _, _, err := openAttachment(big); err == nil || !strings.Contains(err.Error(), "100 MiB") {
 		t.Errorf("oversize accepted: %v", err)
 	}
 }
@@ -416,5 +419,35 @@ func TestEnqueueNeverBlocks(t *testing.T) {
 	}
 	if got := c.droppedIngest.Load(); got != 8 {
 		t.Fatalf("dropped = %d, want 8", got)
+	}
+}
+
+func TestOpenAttachments(t *testing.T) {
+	dir := t.TempDir()
+	var paths []string
+	for _, n := range []string{"a.png", "b.pdf"} {
+		p := filepath.Join(dir, n)
+		if err := os.WriteFile(p, []byte(n), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, p)
+	}
+	files, closeFn, err := openAttachments(paths)
+	defer closeFn()
+	if err != nil || len(files) != 2 || files[0].Name != "a.png" || files[0].ContentType != "image/png" || files[1].ContentType != "application/pdf" {
+		t.Fatalf("files = %+v, err = %v", files, err)
+	}
+	_, closeFn2, err := openAttachments(append(paths, filepath.Join(dir, "missing")))
+	closeFn2()
+	if err == nil {
+		t.Fatal("a missing file must fail")
+	}
+	many := make([]string, MaxAttachments+1)
+	for i := range many {
+		many[i] = paths[0]
+	}
+	if _, closeFn3, err := openAttachments(many); err == nil || !strings.Contains(err.Error(), "at most 10") {
+		closeFn3()
+		t.Fatalf("11 files: err = %v", err)
 	}
 }

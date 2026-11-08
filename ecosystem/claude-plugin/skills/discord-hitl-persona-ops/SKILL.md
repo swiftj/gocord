@@ -68,7 +68,10 @@ same `persona_name` updates it.
 ### 2. Send
 `discord_persona_send` with `persona_name`, `content` (≤ 2000 chars), and
 optionally `channel_id` (falls back to the persona default), `thread_id`,
-`embed`. The server reuses or creates one webhook per parent channel
+`embed`, and `file_path`/`file_paths` (up to 10 local files, such as scene
+art or handouts; paths may be relative to the media root). Images too
+large for the server's upload limit are shrunk automatically. Use this, not
+`discord_send`, when an image should appear under the persona's name. The server reuses or creates one webhook per parent channel
 (requires the bot's `ManageWebhooks` permission). Webhook tokens are never
 returned.
 

@@ -20,7 +20,7 @@ Conventions:
 | 1 | [`discord_login`](#discord_login) | W | Authenticate or switch the active bot profile. The token is never echoed. |
 | 2 | [`discord_list_servers`](#discord_list_servers) | R | List guilds the bot belongs to with member counts and owners. |
 | 3 | [`discord_get_server_info`](#discord_get_server_info) | R | Guild metadata, channels, roles, boost tier, and features. |
-| 4 | [`discord_send`](#discord_send) | W | Send text, an embed, or a local file to a channel or thread. Content ≤ 2000 chars. |
+| 4 | [`discord_send`](#discord_send) | W | Send text, an embed, and/or up to 10 local files to a channel or thread. Content ≤ 2000 chars. |
 | 5 | [`discord_read_messages`](#discord_read_messages) | R | Read message history with mentions resolved. At most one of before/after/around. |
 | 6 | [`discord_edit_message`](#discord_edit_message) | W | Edit a bot-authored message. |
 | 7 | [`discord_delete_message`](#discord_delete_message) | D, DR | Delete a message. |
@@ -42,13 +42,13 @@ Conventions:
 | 23 | [`discord_list_members`](#discord_list_members) | R | List members with roles and join dates. Requires the SERVER MEMBERS intent. |
 | 24 | [`discord_manage_roles`](#discord_manage_roles) | R/D, DR | List, create, edit, delete, assign, or revoke roles. Roles at or above the bot's highest role are refused. |
 | 25 | [`discord_create_webhook`](#discord_create_webhook) | W | Create a channel webhook. The token is never returned. |
-| 26 | [`discord_send_webhook_message`](#discord_send_webhook_message) | W | Send a message through a webhook (by ID or URL). |
+| 26 | [`discord_send_webhook_message`](#discord_send_webhook_message) | W | Send a message, embed, and/or files through a webhook (by ID or URL). |
 | 27 | [`discord_edit_webhook`](#discord_edit_webhook) | D, DR | Rename a webhook or move it to another channel. |
 | 28 | [`discord_delete_webhook`](#discord_delete_webhook) | D, DR | Delete a webhook (also removes a persona webhook mapping). |
 | 29 | [`discord_search_messages`](#discord_search_messages) | R | FTS5 full-text search over indexed messages; backfills unindexed channels via REST first. |
 | 30 | [`discord_await_interaction`](#discord_await_interaction) | W | Post buttons, a select menu, or a modal and block until an authorised user responds or the timeout expires. |
 | 31 | [`discord_persona_register`](#discord_persona_register) | W | Register or update a reusable persona (stored locally; no Discord call). |
-| 32 | [`discord_persona_send`](#discord_persona_send) | W | Send as a registered persona; reuses or creates a webhook on the target (parent) channel. |
+| 32 | [`discord_persona_send`](#discord_persona_send) | W | Send text, an embed, and/or files as a registered persona; reuses or creates a webhook on the target (parent) channel. |
 | 33 | [`discord_create_poll`](#discord_create_poll) | W | Create a native Discord poll. |
 | 34 | [`discord_get_poll_results`](#discord_get_poll_results) | R | Poll tallies, total votes, winners (ties → multiple), and finalized state. |
 | 35 | [`discord_manage_threads`](#discord_manage_threads) | W/D, DR | Create threads (standalone or from a message), or archive/unarchive/lock/unlock them. |
@@ -170,15 +170,20 @@ Example response (text content):
 ### discord_send
 
 **#4 · Kind:** W  
-Send text, an embed, or a local file to a channel or thread. Content ≤ 2000 chars.
+Send text, an embed, and/or up to 10 local files to a channel or thread as the bot. Content ≤ 2000 chars. To post as a persona, use `discord_persona_send`.
 
 | Parameter | Type | Required | Notes |
 | :--- | :--- | :-- | :--- |
 | `channel_id` | string | yes | Channel or thread; accepts `#name`. |
-| `content` | string | yes | Message text (≤ 2000 chars). |
+| `content` | string | no | Message text (≤ 2000 chars); required unless an embed or file is given. |
 | `embed` | object | no | `{title, description, url, color, fields[{name,value,inline}], footer, image_url}`. |
-| `file_path` | string | no | Absolute path to a regular file ≤ 25 MiB. |
+| `file_path` | string | no | A local file: an absolute path, or a path relative to the media root (`GOCORD_MEDIA_DIR`). |
+| `file_paths` | array | no | More files, as for `file_path` (≤ 10 in all). Images over the server's upload limit are shrunk automatically; files on disk are not changed. |
+| `image_max_dimension` | number | no | Scale attached images so the longest edge is at most this many pixels. |
+| `image_format` | string | no | `jpeg`, `png`, or `original` (default). |
 | `reply_to_message_id` | string | no | Message to reply to. |
+
+**Attachments and upload limits.** Discord limits each message's uploads by the server's boost level: 10 MiB at level 0 or 1, 50 MiB at level 2, and 100 MiB at level 3. When the files are over the limit, gocord re-encodes images as JPEG (PNG if they have transparency) and scales them down until they fit, then reports each change in a second text part of the result. The same applies to `discord_send_webhook_message` and `discord_persona_send`.
 
 Example request (`tools/call` arguments):
 
@@ -877,17 +882,21 @@ Example response (text content):
 ### discord_send_webhook_message
 
 **#26 · Kind:** W  
-Send a message through a webhook (by ID or URL).
+Send a message, embed, and/or up to 10 local files through a webhook (by ID or URL).
 
 | Parameter | Type | Required | Notes |
 | :--- | :--- | :-- | :--- |
 | `webhook_id` | string | no | One of `webhook_id` / `webhook_url` is required. |
 | `webhook_url` | string | no | `https://discord.com/api/webhooks/{id}/{token}`. |
-| `content` | string | yes |  |
+| `content` | string | no | Required unless an embed or file is given. |
 | `username` | string | no | Override display name. |
 | `avatar_url` | string | no |  |
 | `thread_id` | string | no |  |
 | `embed` | object | no |  |
+| `file_path` | string | no | A local file: an absolute path, or a path relative to the media root (`GOCORD_MEDIA_DIR`). |
+| `file_paths` | array | no | More files, as for `file_path` (≤ 10 in all). Images over the server's upload limit are shrunk automatically; files on disk are not changed. |
+| `image_max_dimension` | number | no | Scale attached images so the longest edge is at most this many pixels. |
+| `image_format` | string | no | `jpeg`, `png`, or `original` (default). |
 
 Example request (`tools/call` arguments):
 
@@ -1083,20 +1092,25 @@ Example response (text content):
 ### discord_persona_send
 
 **#32 · Kind:** W  
-Send as a registered persona; reuses or creates a webhook on the target (parent) channel.
+Send text, an embed, and/or up to 10 local files as a registered persona; reuses or creates a webhook on the target (parent) channel.
 
 | Parameter | Type | Required | Notes |
 | :--- | :--- | :-- | :--- |
 | `persona_name` | string | yes |  |
-| `content` | string | yes |  |
+| `content` | string | no | Required unless an embed or file is given. |
 | `channel_id` | string | no | Defaults to the persona's default channel. |
 | `thread_id` | string | no |  |
 | `embed` | object | no |  |
+| `file_path` | string | no | A local file: an absolute path, or a path relative to the media root (`GOCORD_MEDIA_DIR`). |
+| `file_paths` | array | no | More files, as for `file_path` (≤ 10 in all). Images over the server's upload limit are shrunk automatically; files on disk are not changed. |
+| `image_max_dimension` | number | no | Scale attached images so the longest edge is at most this many pixels. |
+| `image_format` | string | no | `jpeg`, `png`, or `original` (default). |
 
 Example request (`tools/call` arguments):
 
 ```json
 {"name": "discord_persona_send", "arguments": {"persona_name": "release-bot", "content": "v1.2.0 is live 🚀", "thread_id": "100000000000000060"}}
+{"name": "discord_persona_send", "arguments": {"persona_name": "dm", "content": "The keep at dusk.", "file_path": "Scenes/keep.png"}}
 ```
 
 Example response (text content):

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -19,19 +17,17 @@ import (
 	"github.com/local/discord-mcp/internal/policy"
 )
 
-// msgMaxFileBytes is Discord's default upload limit (25 MiB).
-const msgMaxFileBytes = 25 << 20
-
 // RegisterMessageTools registers send/read/edit/delete/bulk-delete message tools.
 func RegisterMessageTools(s *server.MCPServer, d deps.Deps) {
 	s.AddTool(blTool("discord_send",
-		"Send text, an embed, and/or a local file to a channel or thread. Content must be at most 2000 characters.",
+		"Send text, an embed, and/or up to 10 local files to a channel or thread as the bot. To post as a persona, use discord_persona_send. Content must be at most 2000 characters.",
 		blMutating(false, false),
-		mcp.WithString("channel_id", mcp.Required(), mcp.Description("Channel or thread Snowflake, #name, or mention.")),
-		mcp.WithString("content", mcp.Required(), mcp.MaxLength(blMaxContent), mcp.Description("Message text (may be empty when embed or file_path is given).")),
-		mcp.WithObject("embed", mcp.Description("Embed: {title, description, url, color, fields:[{name,value,inline}], footer, image_url}.")),
-		mcp.WithString("file_path", mcp.Description("Absolute path to a regular file (max 25 MiB) to attach.")),
-		mcp.WithString("reply_to_message_id", mcp.Description("Message Snowflake to reply to.")),
+		append([]mcp.ToolOption{
+			mcp.WithString("channel_id", mcp.Required(), mcp.Description("Channel or thread Snowflake, #name, or mention.")),
+			mcp.WithString("content", mcp.MaxLength(blMaxContent), mcp.Description("Message text (may be omitted when embed or a file is given).")),
+			mcp.WithObject("embed", mcp.Description("Embed: {title, description, url, color, fields:[{name,value,inline}], footer, image_url}.")),
+			mcp.WithString("reply_to_message_id", mcp.Description("Message Snowflake to reply to.")),
+		}, attachParams()...)...,
 	), msgSendHandler(d))
 
 	s.AddTool(blTool("discord_read_messages",
@@ -84,48 +80,34 @@ func msgSendHandler(d deps.Deps) server.ToolHandlerFunc {
 		if err != nil {
 			return errorf("%v", err), nil
 		}
-		filePath := strings.TrimSpace(req.GetString("file_path", ""))
-		if filePath != "" {
-			if res := msgCheckFile(filePath); res != nil {
-				return res, nil
-			}
+		files, res := attachFiles(d, req)
+		if res != nil {
+			return res, nil
 		}
-		if strings.TrimSpace(content) == "" && !hasEmbed && filePath == "" {
-			return errorf("content is required (or pass embed or file_path)"), nil
+		if strings.TrimSpace(content) == "" && !hasEmbed && len(files) == 0 {
+			return errorf("content is required (or pass embed, file_path or file_paths)"), nil
 		}
 		ch, res := blChannel(ctx, d, req, "channel_id", tool, opWrite, false)
 		if res != nil {
 			return res, nil
 		}
-		sr := dto.SendMessageReq{ChannelID: ch.ID, Content: content, FilePath: filePath,
+		sr := dto.SendMessageReq{ChannelID: ch.ID, Content: content, FilePaths: files,
 			ReplyToMessageID: strings.TrimSpace(req.GetString("reply_to_message_id", ""))}
 		if hasEmbed {
 			sr.Embed = &embed
 		}
+		prep, res := attachPrepare(ctx, d, req, files, ch.GuildID)
+		if res != nil {
+			return res, nil
+		}
+		defer prep.Close()
+		sr.FilePaths = prep.Paths
 		msg, err := d.Discord.SendMessage(ctx, sr)
 		if err != nil {
 			return errorResult(err), nil
 		}
-		return jsonResult(msg), nil
+		return attachResult(jsonResult(msg), prep), nil
 	}
-}
-
-// msgCheckFile validates an attachment path: absolute, regular file, ≤ 25 MiB.
-func msgCheckFile(p string) *mcp.CallToolResult {
-	if !filepath.IsAbs(p) {
-		return errorf("file_path must be absolute, got %q", p)
-	}
-	fi, err := os.Stat(p)
-	if err != nil {
-		return errorf("file_path %q: %v", p, err)
-	}
-	if !fi.Mode().IsRegular() {
-		return errorf("file_path %q is not a regular file", p)
-	}
-	if fi.Size() > msgMaxFileBytes {
-		return errorf("file_path %q is %d bytes; the limit is 25 MiB (%d bytes)", p, fi.Size(), msgMaxFileBytes)
-	}
-	return nil
 }
 
 func msgReadHandler(d deps.Deps) server.ToolHandlerFunc {

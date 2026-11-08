@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"sync"
@@ -484,9 +485,11 @@ func (m *MockClient) SendMessage(_ context.Context, req dto.SendMessageReq) (*dt
 	if req.Embed != nil {
 		msg.Embeds = []dto.EmbedSummary{dto.EmbedSummary(*req.Embed)}
 	}
+	paths := req.FilePaths
 	if req.FilePath != "" {
-		msg.Attachments = []dto.AttachmentRef{{Filename: req.FilePath}}
+		paths = append([]string{req.FilePath}, paths...)
 	}
+	msg.Attachments = mockAttachments(paths)
 	l := m.Messages[req.ChannelID]
 	l[len(l)-1] = msg
 	return &msg, nil
@@ -1111,7 +1114,26 @@ func (m *MockClient) SendWebhookMessage(_ context.Context, req dto.WebhookMessag
 		username = "webhook"
 	}
 	msg := m.appendMessage(channelID, req.WebhookID, username, req.Content)
+	msg.IsWebhook, msg.WebhookID = true, req.WebhookID
+	if req.Embed != nil {
+		msg.Embeds = []dto.EmbedSummary{dto.EmbedSummary(*req.Embed)}
+	}
+	msg.Attachments = mockAttachments(req.FilePaths)
+	l := m.Messages[channelID]
+	l[len(l)-1] = msg
 	return &msg, nil
+}
+
+// mockAttachments records each path's base name, as Discord would.
+func mockAttachments(paths []string) []dto.AttachmentRef {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make([]dto.AttachmentRef, len(paths))
+	for i, p := range paths {
+		out[i] = dto.AttachmentRef{Filename: filepath.Base(p)}
+	}
+	return out
 }
 
 func (m *MockClient) ListScheduledEvents(_ context.Context, guildID string) ([]dto.ScheduledEvent, error) {

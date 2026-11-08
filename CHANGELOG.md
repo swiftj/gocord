@@ -21,6 +21,19 @@
   `author_display_name`, and `author_avatar_url`. Attachments add `id`,
   `proxy_url`, `width`, and `height`. `discord_list_tuppers` lists webhook
   characters with their latest art.
+- **Files from personas and webhooks:** `discord_persona_send` and
+  `discord_send_webhook_message` take `file_path` and `file_paths`, so images
+  and handouts post under a persona's name and avatar instead of the bot's.
+  `discord_send` also takes `file_paths`. All three attach up to 10 files
+  (up to 100 MiB each on disk) and accept paths relative to the media root, such as
+  `Scenes/keep.png`; `content` is optional when an embed or file is given.
+- **Automatic image shrinking:** when attachments are over the server's upload
+  limit (10 MiB at boost level 0-1, 50 MiB at 2, 100 MiB at 3), the three send
+  tools re-encode images as JPEG (PNG if transparent) and scale them down until
+  they fit. The files on disk are never changed, and the result lists each change.
+  `image_max_dimension` and `image_format` adjust images even when they fit.
+  Non-image files over the limit are refused before upload, and a Discord
+  "Request entity too large" error explains the limit.
 - **Diagnostics:** `discord_check_access` computes the bot's View/Read History
   access per channel and suggests a fix for each blocked one.
 - The Desktop extension has an optional "Saved Images Folder" field.

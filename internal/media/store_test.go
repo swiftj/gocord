@@ -217,3 +217,32 @@ func TestList(t *testing.T) {
 		t.Fatalf("missing root: %v %v", files, err)
 	}
 }
+
+func TestResolveRead(t *testing.T) {
+	root := t.TempDir()
+	s := NewStore(root, false)
+	if err := os.MkdirAll(filepath.Join(root, "Maps"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Maps", "a.png"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "out")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "b.png"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := s.ResolveRead("Maps/a.png"); err != nil || p != filepath.Join(root, "Maps", "a.png") {
+		t.Fatalf("relative: %q, %v", p, err)
+	}
+	if p, err := s.ResolveRead(filepath.Join(outside, "b.png")); err != nil || p != filepath.Join(outside, "b.png") {
+		t.Fatalf("absolute: %q, %v", p, err)
+	}
+	for _, ref := range []string{"", "../x.png", "Maps/none.png", "out/b.png"} {
+		if _, err := s.ResolveRead(ref); !errors.Is(err, ErrPath) {
+			t.Errorf("ResolveRead(%q) = %v, want ErrPath", ref, err)
+		}
+	}
+}

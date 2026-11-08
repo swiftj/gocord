@@ -197,11 +197,14 @@ type EmbedSummary struct {
 type EmbedInput EmbedSummary
 
 type SendMessageReq struct {
-	ChannelID        string      `json:"channel_id"`
-	Content          string      `json:"content,omitempty"`
-	Embed            *EmbedInput `json:"embed,omitempty"`
-	FilePath         string      `json:"file_path,omitempty"`
-	ReplyToMessageID string      `json:"reply_to_message_id,omitempty"`
+	ChannelID string      `json:"channel_id"`
+	Content   string      `json:"content,omitempty"`
+	Embed     *EmbedInput `json:"embed,omitempty"`
+	FilePath  string      `json:"file_path,omitempty"`
+	// FilePaths are further local files to attach (absolute paths). FilePath,
+	// when set, is attached first. Discord allows at most 10 attachments.
+	FilePaths        []string `json:"file_paths,omitempty"`
+	ReplyToMessageID string   `json:"reply_to_message_id,omitempty"`
 }
 
 // ReadMessagesReq cursors are Snowflakes; the tool layer converts ISO-8601 input.
@@ -337,6 +340,8 @@ type WebhookMessageReq struct {
 	AvatarURL  string      `json:"avatar_url,omitempty"`
 	ThreadID   string      `json:"thread_id,omitempty"`
 	Embed      *EmbedInput `json:"embed,omitempty"`
+	// FilePaths are local files to attach (absolute paths, at most 10).
+	FilePaths []string `json:"file_paths,omitempty"`
 }
 
 type Persona struct {

@@ -393,3 +393,34 @@ func describeFile(p string, d fs.DirEntry) FileEntry {
 	}
 	return e
 }
+
+// ResolveRead resolves a file to read (for example, to attach to a message).
+// An absolute path is used as given. A relative path is taken from the media
+// root and must stay inside it after symlinks are resolved, so files saved by
+// discord_fetch_media or fetch_url_to_file can be named by the same relative
+// path that save_to used.
+func (s *Store) ResolveRead(ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || strings.ContainsRune(ref, 0) {
+		return "", fmt.Errorf("%w: a file path is required", ErrPath)
+	}
+	if filepath.IsAbs(ref) {
+		return filepath.Clean(ref), nil
+	}
+	root := s.Root()
+	p := filepath.Join(root, ref)
+	if !within(root, p) {
+		return "", fmt.Errorf("%w: %q escapes the media root %s", ErrPath, ref, root)
+	}
+	if _, err := os.Lstat(p); err != nil {
+		return "", fmt.Errorf("%w: %q is not in the media root %s (%v)", ErrPath, ref, root, errors.Unwrap(err))
+	}
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("media: resolve media root %s: %w", root, err)
+	}
+	if err := checkWithin(p, rootReal, ref); err != nil {
+		return "", err
+	}
+	return p, nil
+}

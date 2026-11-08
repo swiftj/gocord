@@ -17,8 +17,28 @@ import (
 	"github.com/local/discord-mcp/internal/dto"
 )
 
-// MaxAttachmentBytes is the largest local file SendMessage will upload.
-const MaxAttachmentBytes = 25 << 20
+// MaxAttachmentBytes is the largest local file gocord will upload: Discord's
+// limit on a server at boost level 3. Lower levels allow less; see UploadLimit.
+const MaxAttachmentBytes = 100 << 20
+
+// BaseUploadLimit is Discord's upload limit on servers at boost level 0 or 1,
+// and for messages whose server is unknown.
+const BaseUploadLimit = 10 << 20
+
+// UploadLimit returns Discord's per-message upload limit for a server boost
+// level (premium tier): 10 MiB at levels 0-1, 50 MiB at 2, 100 MiB at 3.
+func UploadLimit(boostTier int) int64 {
+	switch {
+	case boostTier >= 3:
+		return 100 << 20
+	case boostTier == 2:
+		return 50 << 20
+	}
+	return BaseUploadLimit
+}
+
+// MaxAttachments is the most files Discord accepts on one message.
+const MaxAttachments = 10
 
 // ---------- resolverREST (REST fallbacks for the resolver cache) ----------
 
@@ -385,7 +405,7 @@ func openAttachment(path string) (*discordgo.File, func(), error) {
 		return nil, nil, fmt.Errorf("file_path %q is not a regular file", path)
 	}
 	if fi.Size() > MaxAttachmentBytes {
-		return nil, nil, fmt.Errorf("file_path %q is %d bytes; the limit is %d (25 MiB)", path, fi.Size(), MaxAttachmentBytes)
+		return nil, nil, fmt.Errorf("file_path %q is %d bytes; the limit is %d (100 MiB)", path, fi.Size(), MaxAttachmentBytes)
 	}
 	f, err := os.Open(path) //nolint:gosec // G304: attaching a caller-chosen local file is the documented purpose of file_path
 	if err != nil {
@@ -398,6 +418,30 @@ func openAttachment(path string) (*discordgo.File, func(), error) {
 	return &discordgo.File{Name: filepath.Base(path), ContentType: ct, Reader: f}, func() { _ = f.Close() }, nil
 }
 
+// openAttachments opens every path as an upload. The returned func closes
+// whatever was opened; it is safe to call even when err is non-nil.
+func openAttachments(paths []string) ([]*discordgo.File, func(), error) {
+	files := make([]*discordgo.File, 0, len(paths))
+	closers := make([]func(), 0, len(paths))
+	closeAll := func() {
+		for _, fn := range closers {
+			fn()
+		}
+	}
+	if len(paths) > MaxAttachments {
+		return nil, closeAll, fmt.Errorf("%d files given; Discord allows at most %d per message", len(paths), MaxAttachments)
+	}
+	for _, p := range paths {
+		f, closeFn, err := openAttachment(p)
+		if err != nil {
+			return nil, closeAll, err
+		}
+		closers = append(closers, closeFn)
+		files = append(files, f)
+	}
+	return files, closeAll, nil
+}
+
 func (c *Client) SendMessage(ctx context.Context, req dto.SendMessageReq) (*dto.MessageItem, error) {
 	s, err := c.sess()
 	if err != nil {
@@ -408,13 +452,17 @@ func (c *Client) SendMessage(ctx context.Context, req dto.SendMessageReq) (*dto.
 		fail := false
 		ms.Reference = &discordgo.MessageReference{MessageID: req.ReplyToMessageID, ChannelID: req.ChannelID, FailIfNotExists: &fail}
 	}
+	paths := req.FilePaths
 	if req.FilePath != "" {
-		f, closeFn, err := openAttachment(req.FilePath)
+		paths = append([]string{req.FilePath}, paths...)
+	}
+	if len(paths) > 0 {
+		files, closeFn, err := openAttachments(paths)
+		defer closeFn()
 		if err != nil {
 			return nil, err
 		}
-		defer closeFn()
-		ms.Files = []*discordgo.File{f}
+		ms.Files = files
 	}
 	m, err := s.ChannelMessageSendComplex(req.ChannelID, ms, discordgo.WithContext(ctx))
 	if err != nil {
@@ -1046,6 +1094,14 @@ func (c *Client) SendWebhookMessage(ctx context.Context, req dto.WebhookMessageR
 		return nil, fmt.Errorf("webhook_id or webhook_url is required")
 	}
 	params := &discordgo.WebhookParams{Content: req.Content, Username: req.Username, AvatarURL: req.AvatarURL, Embeds: embedsOf(req.Embed)}
+	if len(req.FilePaths) > 0 {
+		files, closeFn, err := openAttachments(req.FilePaths)
+		defer closeFn()
+		if err != nil {
+			return nil, err
+		}
+		params.Files = files
+	}
 	var m *discordgo.Message
 	if req.ThreadID != "" {
 		m, err = s.WebhookThreadExecute(id, token, true, req.ThreadID, params, discordgo.WithContext(ctx))

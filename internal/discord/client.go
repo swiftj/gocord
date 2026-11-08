@@ -306,6 +306,7 @@ const (
 	codeMissingAccess      = 50001
 	codeMissingPermissions = 50013
 	codeCannotEditOthers   = 50005
+	codeFileTooLarge       = 40005 // "Request entity too large"
 )
 
 // mapErr converts discordgo errors into sentinel-wrapped errors that keep
@@ -348,6 +349,10 @@ func mapErr(op string, err error) error {
 			return fmt.Errorf("%s: %s: %w", op, detail, ErrForbidden)
 		case rest.Response.StatusCode == http.StatusUnauthorized:
 			return fmt.Errorf("%s: invalid or revoked bot token (%s): %w", op, detail, ErrNotLoggedIn)
+		case rest.Response.StatusCode == http.StatusRequestEntityTooLarge || code == codeFileTooLarge:
+			return fmt.Errorf("%s: %s: the attachments are over this server's upload limit "+
+				"(10 MiB on servers without boosts); attach a smaller copy, such as one saved by "+
+				"discord_fetch_media or fetch_url_to_file with max_dimension and format jpeg", op, detail)
 		}
 		return fmt.Errorf("%s: discord HTTP %d: %s", op, rest.Response.StatusCode, detail)
 	}

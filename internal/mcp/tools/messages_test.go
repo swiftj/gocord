@@ -29,7 +29,7 @@ func TestMessageTools(t *testing.T) {
 	fresh := msgFreshIDs(3)
 	blRunCases(t, []blCase{
 		{
-			tool: "discord_send", required: []string{"channel_id", "content"},
+			tool: "discord_send", required: []string{"channel_id"},
 			args: map[string]any{"channel_id": "#general", "content": "hello", "reply_to_message_id": discord.MockFirstMessageID,
 				"embed": map[string]any{"title": "T", "description": "D", "color": 255}},
 			check: func(t *testing.T, txt string, m *discord.MockClient, _ deps.Deps) {
@@ -96,10 +96,10 @@ func TestSendValidation(t *testing.T) {
 	s, m, _ := blSetup(t, nil)
 	blWantErr(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": strings.Repeat("x", 2001)}), "at most 2000")
 	blWantErr(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": ""}), "content is required")
-	blWantErr(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": "x", "file_path": "rel/file.txt"}), "must be absolute")
+	blWantErr(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": "x", "file_path": "rel/file.txt"}), "must be an absolute path")
 	dir := t.TempDir()
 	blWantErr(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": "x", "file_path": dir}), "not a regular file")
-	blWantErr(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": "x", "file_path": filepath.Join(dir, "missing")}), "file_path")
+	blWantErr(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": "x", "file_path": filepath.Join(dir, "missing")}), "no such file")
 	if len(m.MutatingCalls()) != 0 {
 		t.Fatal("validation failures must not mutate")
 	}
@@ -108,8 +108,8 @@ func TestSendValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	blWantOK(t, callTool(t, s, "discord_send", map[string]any{"channel_id": "#general", "content": "", "file_path": f}))
-	if r := blLastCall(t, m, "SendMessage").Args[0].(dto.SendMessageReq); r.FilePath != f {
-		t.Fatalf("file path = %q", r.FilePath)
+	if r := blLastCall(t, m, "SendMessage").Args[0].(dto.SendMessageReq); len(r.FilePaths) != 1 || r.FilePaths[0] != f {
+		t.Fatalf("file paths = %q", r.FilePaths)
 	}
 }
 

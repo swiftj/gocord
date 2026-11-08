@@ -50,17 +50,18 @@ func RegisterWebhookPersonaTools(s *server.MCPServer, d deps.Deps) {
 		return webhookCreate(ctx, d, req), nil
 	})
 
-	s.AddTool(mcp.NewTool(webhookSendTool,
-		mcp.WithDescription("Send a message through a webhook given by webhook_id or webhook_url (one is required). Content must be <= 2000 chars."),
+	s.AddTool(mcp.NewTool(webhookSendTool, append([]mcp.ToolOption{
+		mcp.WithDescription("Send a message, embed and/or up to 10 local files through a webhook given by webhook_id or webhook_url (one is required). Content must be <= 2000 chars."),
 		mcp.WithReadOnlyHintAnnotation(false),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithString("webhook_id", mcp.Description("Webhook Snowflake (token resolved server-side).")),
 		mcp.WithString("webhook_url", mcp.Description("Full https://discord.com/api/webhooks/{id}/{token} URL. Never echoed back.")),
-		mcp.WithString("content", mcp.Required(), mcp.Description("Message text (<= 2000 chars)."), mcp.MaxLength(webhookMaxContent)),
+		mcp.WithString("content", mcp.Description("Message text (<= 2000 chars; may be omitted when embed or a file is given)."), mcp.MaxLength(webhookMaxContent)),
 		mcp.WithString("username", mcp.Description("Override display name (<= 80 chars).")),
 		mcp.WithString("avatar_url", mcp.Description("Override avatar (https URL).")),
 		mcp.WithString("thread_id", mcp.Description("Post into this thread of the webhook's channel.")),
 		mcp.WithObject("embed", mcp.Description("Optional embed: {title, description, url, color, fields:[{name,value,inline}], footer, image_url}.")),
+	}, attachParams()...)...,
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return webhookSend(ctx, d, req), nil
 	})
@@ -104,15 +105,16 @@ func RegisterWebhookPersonaTools(s *server.MCPServer, d deps.Deps) {
 		return personaRegister(ctx, d, req), nil
 	})
 
-	s.AddTool(mcp.NewTool(personaSendTool,
-		mcp.WithDescription("Post as a registered persona via an auto-provisioned channel webhook. Threads are supported via thread_id or a thread channel_id."),
+	s.AddTool(mcp.NewTool(personaSendTool, append([]mcp.ToolOption{
+		mcp.WithDescription("Post text, an embed and/or up to 10 local files (images, maps, handouts) as a registered persona via an auto-provisioned channel webhook. Threads are supported via thread_id or a thread channel_id."),
 		mcp.WithReadOnlyHintAnnotation(false),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithString("persona_name", mcp.Required(), mcp.Description("Registered persona key.")),
-		mcp.WithString("content", mcp.Required(), mcp.Description("Message text (<= 2000 chars)."), mcp.MaxLength(webhookMaxContent)),
+		mcp.WithString("content", mcp.Description("Message text (<= 2000 chars; may be omitted when embed or a file is given)."), mcp.MaxLength(webhookMaxContent)),
 		mcp.WithString("channel_id", mcp.Description("Target channel or thread; defaults to the persona's default channel.")),
 		mcp.WithString("thread_id", mcp.Description("Reply inside this thread.")),
 		mcp.WithObject("embed", mcp.Description("Optional embed: {title, description, url, color, fields:[{name,value,inline}], footer, image_url}.")),
+	}, attachParams()...)...,
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return personaSend(ctx, d, req), nil
 	})
@@ -156,10 +158,14 @@ func webhookCheckHTTPS(field, raw string) error {
 	return nil
 }
 
-// webhookCheckContent validates message content.
-func webhookCheckContent(content string) error {
+// webhookCheckContent validates message content. Content may be empty only
+// when the message carries an embed or files.
+func webhookCheckContent(content string, hasBody bool) error {
 	if strings.TrimSpace(content) == "" {
-		return errors.New("content is required")
+		if hasBody {
+			return nil
+		}
+		return errors.New("content is required (or pass embed, file_path or file_paths)")
 	}
 	if n := utf8.RuneCountInString(content); n > webhookMaxContent {
 		return fmt.Errorf("content is %d characters; Discord allows at most %d", n, webhookMaxContent)
@@ -235,10 +241,19 @@ func webhookCreate(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *m
 
 func webhookSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp.CallToolResult {
 	content := req.GetString("content", "")
-	if err := webhookCheckContent(content); err != nil {
+	embed, err := webhookEmbed(req)
+	if err != nil {
 		return errorResult(err)
 	}
-	wreq := dto.WebhookMessageReq{Content: content, Username: req.GetString("username", ""), AvatarURL: req.GetString("avatar_url", "")}
+	files, res := attachFiles(d, req)
+	if res != nil {
+		return res
+	}
+	if err := webhookCheckContent(content, embed != nil || len(files) > 0); err != nil {
+		return errorResult(err)
+	}
+	wreq := dto.WebhookMessageReq{Content: content, Username: req.GetString("username", ""), AvatarURL: req.GetString("avatar_url", ""),
+		Embed: embed, FilePaths: files}
 	id := strings.TrimSpace(req.GetString("webhook_id", ""))
 	rawURL := strings.TrimSpace(req.GetString("webhook_url", ""))
 	switch {
@@ -266,19 +281,15 @@ func webhookSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 	if err := webhookCheckHTTPS("avatar_url", wreq.AvatarURL); err != nil {
 		return errorResult(err)
 	}
-	embed, err := webhookEmbed(req)
-	if err != nil {
-		return errorResult(err)
-	}
-	wreq.Embed = embed
 
 	op := guildOp(webhookSendTool, "", opWrite, false)
+	guildID := "" // unknown for an unregistered webhook_url: the base upload limit applies
 	if ref := req.GetString("thread_id", ""); strings.TrimSpace(ref) != "" {
 		th, err := webhookResolveThread(ctx, d, ref)
 		if err != nil {
 			return errorResult(err)
 		}
-		wreq.ThreadID = th.ID
+		wreq.ThreadID, guildID = th.ID, th.GuildID
 		op = channelOp(webhookSendTool, th, opWrite, false)
 	} else {
 		// Fail fast in read-only mode before any lookup, then scope the check
@@ -294,6 +305,7 @@ func webhookSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 		switch {
 		case err == nil:
 			op = channelOp(webhookSendTool, ch, opWrite, false)
+			guildID = ch.GuildID
 		case wreq.WebhookID != "":
 			return errorResult(err)
 		}
@@ -301,11 +313,17 @@ func webhookSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 	if err := d.Guard.Check(op); err != nil {
 		return errorResult(err)
 	}
+	prep, res := attachPrepare(ctx, d, req, files, guildID)
+	if res != nil {
+		return res
+	}
+	defer prep.Close()
+	wreq.FilePaths = prep.Paths
 	msg, err := d.Discord.SendWebhookMessage(ctx, wreq)
 	if err != nil {
 		return errorResult(webhookRedact(err, rawURL))
 	}
-	return jsonResult(msg)
+	return attachResult(jsonResult(msg), prep)
 }
 
 // webhookRedact strips the webhook token from an error message.
@@ -531,11 +549,15 @@ type personaSendResult struct {
 func personaSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp.CallToolResult {
 	name := strings.TrimSpace(req.GetString("persona_name", ""))
 	content := req.GetString("content", "")
-	if err := webhookCheckContent(content); err != nil {
-		return errorResult(err)
-	}
 	embed, err := webhookEmbed(req)
 	if err != nil {
+		return errorResult(err)
+	}
+	files, res := attachFiles(d, req)
+	if res != nil {
+		return res
+	}
+	if err := webhookCheckContent(content, embed != nil || len(files) > 0); err != nil {
 		return errorResult(err)
 	}
 	p, err := d.Store.GetPersona(ctx, name)
@@ -580,11 +602,16 @@ func personaSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 		return errorResult(err)
 	}
 
+	prep, res := attachPrepare(ctx, d, req, files, target.GuildID)
+	if res != nil {
+		return res
+	}
+	defer prep.Close()
 	whID, created, err := personaWebhookFor(ctx, d, parentID)
 	if err != nil {
 		return errorResult(err)
 	}
-	wreq := dto.WebhookMessageReq{WebhookID: whID, Content: content, Username: p.DisplayName, AvatarURL: p.AvatarURL, ThreadID: threadID, Embed: embed}
+	wreq := dto.WebhookMessageReq{WebhookID: whID, Content: content, Username: p.DisplayName, AvatarURL: p.AvatarURL, ThreadID: threadID, Embed: embed, FilePaths: prep.Paths}
 	msg, err := d.Discord.SendWebhookMessage(ctx, wreq)
 	if err != nil && errors.Is(err, discord.ErrNotFound) && !created {
 		// Unknown Webhook: it was deleted out-of-band. Forget it, recreate once, retry.
@@ -601,5 +628,5 @@ func personaSend(ctx context.Context, d deps.Deps, req mcp.CallToolRequest) *mcp
 	if err != nil {
 		return errorResult(err)
 	}
-	return jsonResult(personaSendResult{Persona: p.Name, ChannelID: parentID, ThreadID: threadID, WebhookID: whID, WebhookCreated: created, Message: msg})
+	return attachResult(jsonResult(personaSendResult{Persona: p.Name, ChannelID: parentID, ThreadID: threadID, WebhookID: whID, WebhookCreated: created, Message: msg}), prep)
 }

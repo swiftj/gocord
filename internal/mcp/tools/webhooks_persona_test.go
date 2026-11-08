@@ -17,11 +17,11 @@ func TestWebhookPersonaSchemas(t *testing.T) {
 	d, _ := newTestDeps(t, nil)
 	s := newTestServer(t, d, RegisterWebhookPersonaTools)
 	nextgenSchema(t, s, webhookCreateTool, "channel_id", "name")
-	nextgenSchema(t, s, webhookSendTool, "content")
+	nextgenSchema(t, s, webhookSendTool)
 	nextgenSchema(t, s, webhookEditTool, "webhook_id")
 	nextgenSchema(t, s, webhookDeleteTool, "webhook_id")
 	nextgenSchema(t, s, personaRegisterTool, "persona_name", "display_name")
-	nextgenSchema(t, s, personaSendTool, "persona_name", "content")
+	nextgenSchema(t, s, personaSendTool, "persona_name")
 	for _, name := range []string{webhookEditTool, webhookDeleteTool} {
 		tool := s.GetTool(name).Tool
 		if tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
